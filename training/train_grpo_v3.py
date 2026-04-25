@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 """
-GRPO training for TriageAgent — pragmatic single-call rollout approach.
+GRPO training for TriageAgent — grounded single-call rollout approach (v3).
 
-Why this design:
-TRL's environment_factory has a known bug where tool schemas aren't reliably
-injected into the model's context (TRL issue #5366), so the model emits plain
-text instead of tool calls and tools/call_frequency stays at 0.
-
-This script bypasses that by running the entire agent loop INSIDE the reward
-function. The model generates a single completion containing one tool call as
-JSON. We parse it, execute it against the env, then score how grounded the
-final action is. Over training, the model learns to output tool calls that
-score well — which is the GRPO signal we want.
-
-Trade-off: episodes are 1-step instead of multi-turn. We still get genuine
-GRPO training of tool-using behavior on the env's actual reward function.
+Changes from v2:
+- build_training_prompt injects retrieved context (gold + distractors) into every
+  prompt so the model learns to cite from evidence, not recall.
+- Five new reward functions: r_format_graduated, r_resolution_quality,
+  r_citation_grounding, r_calibration, r_parsimony.
+- GRPOConfig tuned: num_generations=8, max_completion_length=512, lr=1e-5,
+  temperature=0.9, reward_weights=[0.3, 1.5, 1.0, 0.5, 0.3].
 
 Usage:
-    python training/train_grpo.py              # full 200-step run
-    python training/train_grpo.py --smoke-test # 5-step verification
+    python training/train_grpo_v3.py              # full 200-step run
+    python training/train_grpo_v3.py --smoke-test # 5-step verification
 """
 
 import argparse
@@ -35,6 +29,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+from rouge_score import rouge_scorer
 
 # ── Project root on path ──────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent
@@ -213,6 +208,19 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _completion_text(completion):
+    """Extract text from completion (handles both str and chat-format)."""
+    if isinstance(completion, str):
+        return completion
+    if isinstance(completion, list):
+        # conversational format: [{"role": "assistant", "content": "..."}]
+        for msg in reversed(completion):
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                return msg.get("content", "")
+        return ""
+    return str(completion)
+
+
 # ── Episode runner — runs in reward function ──────────────────────────────────
 
 # Cache: maps ticket_id → cached agent runs to avoid re-running across reward fns
@@ -267,116 +275,210 @@ def run_episode_from_completion(completion: str, ticket_id: str) -> _State:
     return state
 
 
-# ── Reward functions — TRL signature ──────────────────────────────────────────
+# ── System prompt for grounded resolution ────────────────────────────────────
 
-def r_primary(prompts, completions, ticket_id, **kwargs):
-    out = []
-    for completion, tid in zip(completions, ticket_id):
-        text = _completion_text(completion)
-        state = run_episode_from_completion(text, tid)
-        out.append(primary_reward(state))
-    return out
-
-
-def r_grounding(prompts, completions, ticket_id, **kwargs):
-    out = []
-    for completion, tid in zip(completions, ticket_id):
-        text = _completion_text(completion)
-        state = run_episode_from_completion(text, tid)
-        out.append(reward_grounding(state))
-    return out
-
-
-def r_efficiency(prompts, completions, ticket_id, **kwargs):
-    out = []
-    for completion, tid in zip(completions, ticket_id):
-        text = _completion_text(completion)
-        state = run_episode_from_completion(text, tid)
-        out.append(reward_efficiency(state))
-    return out
-
-
-def r_calibration(prompts, completions, ticket_id, **kwargs):
-    out = []
-    for completion, tid in zip(completions, ticket_id):
-        text = _completion_text(completion)
-        state = run_episode_from_completion(text, tid)
-        out.append(reward_calibration(state))
-    return out
-
-
-def r_format(prompts, completions, ticket_id, **kwargs):
-    """Shaped reward: +0.1 for valid tool call, +0.05 extra for submit_resolution."""
-    out = []
-    for completion in completions:
-        text = _completion_text(completion)
-        parsed = parse_tool_call(text)
-        if parsed is None:
-            out.append(0.0)
-        elif parsed["tool_name"] == "submit_resolution":
-            out.append(0.15)  # higher reward for actually submitting
-        else:
-            out.append(0.1)   # lower reward for search-only
-    return out
-
-
-def _completion_text(completion):
-    """Extract text from completion (handles both str and chat-format)."""
-    if isinstance(completion, str):
-        return completion
-    if isinstance(completion, list):
-        # conversational format: [{"role": "assistant", "content": "..."}]
-        for msg in reversed(completion):
-            if isinstance(msg, dict) and msg.get("role") == "assistant":
-                return msg.get("content", "")
-        return ""
-    return str(completion)
-
-
-# ── Build prompts that explain the tool-call format ───────────────────────────
-
-SYSTEM_PROMPT = """You are an enterprise IT triage agent. You resolve support tickets by calling tools.
-
-Available tools:
-- search_kb(query, max_results=5): search KB articles
-- search_tickets(query, max_results=5): search past resolved tickets
-- search_incidents(query, max_results=3): search incident postmortems
-- get_article(article_id): retrieve full KB article body
-- get_ticket(ticket_id): retrieve full past ticket
-- get_incident(incident_id): retrieve full incident postmortem
-- submit_resolution(resolution, cited_artifacts, confidence, escalate=False): submit final answer
+SYSTEM_PROMPT_GROUNDED = """You are an enterprise IT triage agent. You resolve support tickets using ONLY the retrieved context provided in the user message.
 
 You MUST output your tool call as a single JSON object inside a ```json code block:
 ```json
-{"tool_name": "submit_resolution", "arguments": {"resolution": "...", "cited_artifacts": ["KB-00001"], "confidence": 0.8, "escalate": false}}
+{"tool_name": "submit_resolution", "arguments": {"resolution": "...", "cited_artifacts": ["KB-00001"], "confidence": 0.85, "escalate": false}}
 ```
 
-Respond with ONE tool call. If you have enough information to resolve the ticket, call submit_resolution. Otherwise call a search or get tool first."""
+Rules:
+- Cite ONLY artifact IDs that appear in the Retrieved Context section.
+- If the context does not contain enough information to resolve the ticket, set escalate=true and cite nothing.
+- Output exactly ONE tool call. Do not search or fetch — all relevant context is already provided."""
 
 
-def build_dataset(tickets: list):
+# ── Prompt builder with retrieved context ────────────────────────────────────
+
+def build_training_prompt(ticket, corpus, distractor_k=3):
+    # Real signal: gold-cited articles
+    gold_articles = []
+    for aid in ticket.get("gold_cited_ids", []):
+        art = corpus.get_article(aid) or corpus.get_ticket(aid) or corpus.get_incident(aid)
+        if art:
+            gold_articles.append(art)
+
+    # Realistic noise: distractors from actual search
+    distractor_hits = corpus.search_kb(ticket["title"], max_results=distractor_k + 2)
+    distractors = [
+        corpus.get_article(h["id"]) for h in distractor_hits
+        if h["id"] not in ticket.get("gold_cited_ids", [])
+    ]
+    distractors = [d for d in distractors if d is not None][:distractor_k]
+
+    # Shuffle so position doesn't leak gold
+    import random
+    context_items = gold_articles + distractors
+    random.shuffle(context_items)
+
+    context_block = "\n\n".join(
+        f"### {a['id']}\n{a.get('title', '')}\n{a.get('body', a.get('content', ''))[:1000]}"
+        for a in context_items
+    )
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT_GROUNDED},
+        {"role": "user", "content": (
+            f"# Ticket: {ticket.get('ticket_id', ticket.get('id', ''))}\n"
+            f"**Title:** {ticket['title']}\n"
+            f"**Description:** {ticket['description']}\n\n"
+            f"# Retrieved Context:\n{context_block}\n\n"
+            "Resolve this ticket using ONLY the retrieved context. Output exactly one "
+            "`submit_resolution` tool call as a JSON code block."
+        )},
+    ]
+
+
+def build_dataset(tickets: list, corpus: Corpus):
     from datasets import Dataset
-
     rows = []
     for t in tickets:
         tid = t.get("ticket_id", t.get("id", ""))
-        title = t.get("title", "")
-        description = t.get("description", "")
-
+        prompt = build_training_prompt(t, corpus)
         rows.append({
-            "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"# New Ticket: {tid}\n\n"
-                    f"**Title:** {title}\n\n"
-                    f"**Description:** {description}\n\n"
-                    "Resolve this ticket. Output exactly one tool call in a ```json``` block."
-                )},
-            ],
+            "prompt": prompt,
             "ticket_id": tid,
         })
-
     return Dataset.from_list(rows)
+
+
+# ── Reward functions ──────────────────────────────────────────────────────────
+
+# ── Reward 1: Graduated format (5 partial-credit tiers) ──
+def r_format_graduated(completions, **kwargs):
+    """0.0 → 1.0 in five steps. Forces variance even when model fails to submit."""
+    out = []
+    for c in completions:
+        text = _completion_text(c)
+        score = 0.0
+        # Tier 1: contains any tool-call markup
+        if "```json" in text or "<tool_call>" in text:
+            score = 0.2
+        parsed = parse_tool_call(text)
+        if parsed is None:
+            out.append(score)
+            continue
+        # Tier 2: parses to JSON
+        score = 0.4
+        # Tier 3: valid tool name
+        if parsed["tool_name"] in KNOWN_TOOLS:
+            score = 0.6
+        # Tier 4: actually calls submit_resolution
+        if parsed["tool_name"] == "submit_resolution":
+            score = 0.8
+            args = parsed.get("arguments", {})
+            # Tier 5: all required fields present and non-empty
+            req = {"resolution", "cited_artifacts", "confidence"}
+            if (req.issubset(args.keys())
+                and isinstance(args.get("resolution"), str)
+                and len(args["resolution"]) > 20
+                and isinstance(args.get("cited_artifacts"), list)):
+                score = 1.0
+        out.append(score)
+    return out
+
+
+# ── Reward 2: Resolution quality (ROUGE-L vs gold) ──
+_ROUGE = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+
+def r_resolution_quality(completions, ticket_id, **kwargs):
+    """Continuous text-similarity score. Drives most of the variance."""
+    idx = get_ticket_index()
+    out = []
+    for c, tid in zip(completions, ticket_id):
+        text = _completion_text(c)
+        parsed = parse_tool_call(text)
+        if parsed is None or parsed["tool_name"] != "submit_resolution":
+            out.append(0.0); continue
+        submitted = parsed.get("arguments", {}).get("resolution", "")
+        gold = idx.get(tid, {}).get("gold_resolution", "")
+        if not submitted or not gold:
+            out.append(0.0); continue
+        f1 = _ROUGE.score(gold, submitted)["rougeL"].fmeasure
+        out.append(f1)
+    return out
+
+
+# ── Reward 3: Citation F1 vs gold ──
+def r_citation_grounding(completions, ticket_id, **kwargs):
+    idx = get_ticket_index()
+    out = []
+    for c, tid in zip(completions, ticket_id):
+        text = _completion_text(c)
+        parsed = parse_tool_call(text)
+        ticket = idx.get(tid, {})
+        gold = set(ticket.get("gold_cited_ids", []))
+        is_unans = ticket.get("is_unanswerable", False)
+
+        if parsed is None or parsed["tool_name"] != "submit_resolution":
+            out.append(0.0); continue
+        cited = set(parsed.get("arguments", {}).get("cited_artifacts", []))
+
+        # Unanswerable case: reward abstention (cite nothing, escalate)
+        if is_unans:
+            esc = bool(parsed["arguments"].get("escalate", False))
+            out.append(1.0 if (not cited and esc) else 0.3 if not cited else 0.0)
+            continue
+
+        if not gold:
+            esc = bool(parsed.get("arguments", {}).get("escalate", False))
+            out.append(1.0 if esc else 0.1)
+            continue
+        if not cited:
+            out.append(0.0); continue
+        tp = len(cited & gold)
+        if tp == 0:
+            out.append(0.0); continue
+        p, r = tp / len(cited), tp / len(gold)
+        out.append(2 * p * r / (p + r))
+    return out
+
+
+# ── Reward 4: Confidence calibration (Brier-style) ──
+def r_calibration(completions, ticket_id, **kwargs):
+    """Reward = 1 - (confidence - actual_quality)^2.
+
+    Couples two output dimensions — confidence AND resolution quality —
+    so it varies across completions in a way no other reward can fake.
+    """
+    idx = get_ticket_index()
+    out = []
+    for c, tid in zip(completions, ticket_id):
+        text = _completion_text(c)
+        parsed = parse_tool_call(text)
+        if parsed is None or parsed["tool_name"] != "submit_resolution":
+            out.append(0.0); continue
+        args = parsed.get("arguments", {})
+        try:
+            conf = float(args.get("confidence", 0.5))
+            conf = max(0.0, min(1.0, conf))
+        except Exception:
+            out.append(0.0); continue
+        # Compute resolution quality on the fly (cheap; can cache)
+        gold = idx.get(tid, {}).get("gold_resolution", "")
+        submitted = args.get("resolution", "")
+        quality = _ROUGE.score(gold, submitted)["rougeL"].fmeasure if (gold and submitted) else 0.0
+        out.append(1.0 - (conf - quality) ** 2)
+    return out
+
+
+# ── Reward 5: Length parsimony (anti-stub, anti-rambling) ──
+def r_parsimony(completions, **kwargs):
+    out = []
+    for c in completions:
+        text = _completion_text(c)
+        parsed = parse_tool_call(text)
+        if parsed is None:
+            out.append(0.0); continue
+        n = len(text.split())
+        if n < 40:        out.append(0.2)   # stub
+        elif n < 80:      out.append(0.6)
+        elif n <= 400:    out.append(1.0)   # sweet spot
+        elif n <= 800:    out.append(0.6)
+        else:             out.append(0.2)   # rambling
+    return out
 
 
 # ── Plot helpers ──────────────────────────────────────────────────────────────
@@ -384,11 +486,11 @@ def build_dataset(tickets: list):
 def save_reward_curve(log_history: list, output_path: Path):
     reward_keys = [
         ("reward", "Total reward", "#2d6a4f", 1.8),
-        ("rewards/r_primary/mean", "Primary (binary)", "#1d3557", 1.2),
-        ("rewards/r_grounding/mean", "Grounding", "#457b9d", 1.2),
-        ("rewards/r_efficiency/mean", "Efficiency", "#e9c46a", 1.2),
+        ("rewards/r_format_graduated/mean", "Format", "#9d4edd", 1.0),
+        ("rewards/r_resolution_quality/mean", "Resolution Quality", "#1d3557", 1.2),
+        ("rewards/r_citation_grounding/mean", "Citation F1", "#457b9d", 1.2),
         ("rewards/r_calibration/mean", "Calibration", "#e76f51", 1.2),
-        ("rewards/r_format/mean", "Format (tool-call valid)", "#9d4edd", 1.0),
+        ("rewards/r_parsimony/mean", "Parsimony", "#e9c46a", 1.2),
     ]
 
     curves = {}
@@ -439,11 +541,13 @@ def main():
     if smoke:
         use_vllm = False
 
+    os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+
     # Pre-load corpus & tickets so first reward call doesn't pay the cost
     get_corpus()
     ticket_index = get_ticket_index()
     train_tickets = list(ticket_index.values())
-    dataset = build_dataset(train_tickets)
+    dataset = build_dataset(train_tickets, get_corpus())
 
     print(f"Loaded {len(train_tickets)} training tickets.")
     print(f"max_steps={max_steps}  use_vllm={use_vllm}  smoke={smoke}")
@@ -452,7 +556,7 @@ def main():
     report_to = "none"
     try:
         import wandb
-        wandb.init(project="triage-agent-grpo", name=f"qwen3b-{'smoke' if smoke else 'full'}-v2")
+        wandb.init(project="triage-agent-grpo", name=f"qwen3b-{'smoke' if smoke else 'full'}-v3")
         report_to = "wandb"
         print("wandb logging enabled.")
     except Exception as e:
@@ -468,18 +572,29 @@ def main():
         vllm_gpu_memory_utilization=0.4,
     ) if use_vllm else dict(use_vllm=False)
 
+    extra_kwargs = {}
+    try:
+        import inspect
+        from trl import GRPOConfig as _check
+        sig = inspect.signature(_check)
+        if "log_completions" in sig.parameters:
+            extra_kwargs["log_completions"] = True
+            extra_kwargs["num_completions_to_print"] = 2
+    except Exception:
+        pass
+
     training_args = GRPOConfig(
         output_dir=str(OUTPUT_DIR),
-        num_generations=4,
+        num_generations=8,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
-        max_completion_length=2048,
-        learning_rate=5e-6,
+        max_completion_length=512,
+        learning_rate=1e-5,
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         optim="adamw_8bit",
         loss_type="dr_grpo",
-        reward_weights=[1.0, 0.3, 0.2, 0.15, 0.1],
+        reward_weights=[0.3, 1.5, 1.0, 0.5, 0.3],
         max_steps=max_steps,
         save_steps=25,
         logging_steps=1,
@@ -490,15 +605,16 @@ def main():
         hub_strategy="every_save",
         remove_unused_columns=False,
         **vllm_kwargs,
-        temperature=1.2,
+        temperature=0.9,
         top_p=0.95,
-        top_k=50,
-        repetition_penalty=1.05,
+        top_k=-1,
+        repetition_penalty=1.0,
+        **extra_kwargs,
     )
 
     trainer = GRPOTrainer(
         model=MODEL,
-        reward_funcs=[r_primary, r_grounding, r_efficiency, r_calibration, r_format],
+        reward_funcs=[r_format_graduated, r_resolution_quality, r_citation_grounding, r_calibration, r_parsimony],
         train_dataset=dataset,
         args=training_args,
     )
