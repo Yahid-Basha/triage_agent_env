@@ -36,7 +36,12 @@ for mod_name in stub_targets:
     stub_instance = OmniStub(mod_name)
     sys.modules[mod_name] = stub_instance
     # Explicitly register submodules that TRL's lazy-loader specifically probes
-    for sub in ["config", "merge", "chunked_loss", "distributed", "extras", "distributed.device_communicators.pynccl"]:
+    sub_paths = [
+        "config", "merge", "chunked_loss", "distributed", "extras", 
+        "distributed.utils", "distributed.device_communicators.pynccl",
+        "distributed.parallel_state", "model_executor"
+    ]
+    for sub in sub_paths:
         sys.modules[f"{mod_name}.{sub}"] = stub_instance
 
 # ─────────────────────────────────────────────────────────────────────────────
