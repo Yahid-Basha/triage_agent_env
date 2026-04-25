@@ -26,10 +26,13 @@ _mk_merge.run_merge = lambda *args, **kwargs: None
 
 _stub_pkg("llm_blender")
 
+for _opt_pkg in ["deepspeed", "peft", "unsloth", "liger_kernel", "comet_ml", "mlflow"]:
+    _stub_pkg(_opt_pkg)
+
 _pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
 _pyhccl.PyHcclCommunicator = type("PyHcclCommunicator", (), {})
 
-del _stub_pkg, _pyhccl  # clean up helper
+del _stub_pkg, _pyhccl, _mk_config, _mk_merge, _opt_pkg  # clean up helper
 
 
 # ─────────────────────────────────────────────────────────────────────────────
