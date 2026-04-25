@@ -64,7 +64,16 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from rouge_score import rouge_scorer
-
+# Add at the very top, before `from trl import ...`
+import sys, types
+for name in [
+    'vllm_ascend',
+    'vllm_ascend.distributed',
+    'vllm_ascend.distributed.device_communicators',
+    'vllm_ascend.distributed.device_communicators.pyhccl',
+]:
+    sys.modules[name] = types.ModuleType(name)
+sys.modules['vllm_ascend.distributed.device_communicators.pyhccl'].PyHcclCommunicator = type('Stub', (), {})
 # Lazy import — TrainerCallback is available whenever TRL/transformers are installed.
 try:
     from transformers import TrainerCallback as _TrainerCallback
