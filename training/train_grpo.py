@@ -307,11 +307,11 @@ def main():
     training_args = GRPOConfig(
         output_dir=str(OUTPUT_DIR),
         # GRPO group size — 4 completions per prompt, memory-safe on A100 40 GB
-        num_generations=4,
+        num_generations=2,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         # Context length — max_completion_length covers the full multi-turn trajectory
-        max_completion_length=4096,
+        max_completion_length=512,
         # Optimizer
         learning_rate=5e-6,
         warmup_ratio=0.1,
