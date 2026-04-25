@@ -8,31 +8,36 @@ import sys
 from unittest.mock import MagicMock
 
 # Recursive mock that returns itself for any attribute or submodule access
-class OmniStub(MagicMock):
-    def __getattr__(self, name):
-        if name in ("__file__", "__path__"): return []
-        if name == "__version__": return "1.0.0"
-        return OmniStub()
+class OmniStub:
+    def __init__(self, name="stub"):
+        self.__name__ = name
+        self.__package__ = name
+        self.__version__ = "1.0.0"
+        self.__path__ = []
+        self.__file__ = "stub_file"
+        # Satisfies importlib.util.find_spec checks
+        self.__spec__ = importlib.util.spec_from_loader(name, loader=None)
 
-# The "Wall of Silence" for optional TRL dependencies
-# These targets cover everything from your previous errors and the new vllm crash
+    def __getattr__(self, name):
+        # Return self to support infinite depth (vllm.dist.device...) without new objects
+        return self
+
+    def __call__(self, *args, **kwargs):
+        # Allows the stub to act as a class constructor or a function
+        return self
+
+# The targets identified from your previous "whack-a-mole" sessions
 stub_targets = [
     "vllm", "vllm_ascend", "mergekit", "llm_blender", 
-    "deepspeed", "unsloth", "liger_kernel", "comet_ml", "mlflow"
+    "deepspeed", "unsloth", "liger_kernel", "comet_ml", "mlflow", "diffusers"
 ]
 
 for mod_name in stub_targets:
-    mock = OmniStub()
-    sys.modules[mod_name] = mock
-    # Handle the specific sub-paths TRL's lazy-loader probes
-    for sub in ["config", "merge", "chunked_loss", "distributed", "extras"]:
-        sys.modules[f"{mod_name}.{sub}"] = mock
-
-# Specific dummy classes that TRL expects to exist in the namespace
-sys.modules["vllm.distributed.device_communicators.pynccl"] = OmniStub()
-sys.modules["vllm.distributed.device_communicators.pynccl"].PyNcclCommunicator = type("PyNcclCommunicator", (), {})
-sys.modules["mergekit.config"].MergeConfiguration = type("MergeConfiguration", (), {})
-sys.modules["mergekit.merge"].MergeOptions = type("MergeOptions", (), {})
+    stub_instance = OmniStub(mod_name)
+    sys.modules[mod_name] = stub_instance
+    # Explicitly register submodules that TRL's lazy-loader specifically probes
+    for sub in ["config", "merge", "chunked_loss", "distributed", "extras", "distributed.device_communicators.pynccl"]:
+        sys.modules[f"{mod_name}.{sub}"] = stub_instance
 
 # ─────────────────────────────────────────────────────────────────────────────
 """
