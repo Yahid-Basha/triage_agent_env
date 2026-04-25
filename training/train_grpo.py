@@ -10,7 +10,7 @@ Usage:
     uv run python training/train_grpo.py [--smoke-test]
 
 Deps (not in pyproject.toml — install in the training environment):
-    pip install trl>=0.12 transformers>=5.2 datasets bitsandbytes trackio
+    pip install trl>=0.12 transformers>=5.2 datasets bitsandbytes wandb
 """
 
 import argparse
@@ -294,13 +294,13 @@ def main():
     def env_factory():
         return TriageEnvForTraining(corpus, ticket_index)
 
-    # trackio (free, works in Colab — set TRACKIO_API_KEY in env or login interactively)
+    # wandb logging — run `wandb login` once in the environment
     try:
-        import trackio
-        trackio.init(project="triage-agent-grpo")
-        print("trackio logging enabled.")
+        import wandb
+        wandb.init(project="triage-agent-grpo")
+        print("wandb logging enabled.")
     except Exception as e:
-        print(f"trackio not available ({e}). Logging to stdout only.")
+        print(f"wandb not available ({e}). Logging to stdout only.")
 
     from trl import GRPOConfig, GRPOTrainer
 
@@ -310,8 +310,7 @@ def main():
         num_generations=4,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
-        # Context lengths — max_completion_length covers the full multi-turn trajectory
-        max_prompt_length=2048,
+        # Context length — max_completion_length covers the full multi-turn trajectory
         max_completion_length=4096,
         # Optimizer
         learning_rate=5e-6,
