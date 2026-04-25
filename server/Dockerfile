@@ -22,7 +22,10 @@ RUN apt-get update && \
 
 # Build argument to control whether we're building standalone or in-repo
 ARG BUILD_MODE=in-repo
-ARG ENV_NAME=rag_judge_env
+ARG ENV_NAME=triage_agent_env
+# Skip heavy ML deps (PyTorch/sentence-transformers) in Docker.
+# The corpus falls back to TF-IDF keyword search automatically.
+ARG UV_INSTALL_ARGS=""
 
 # Copy environment code (always at root of build context)
 COPY . /app/env
@@ -39,7 +42,8 @@ RUN if ! command -v uv >/dev/null 2>&1; then \
     fi
     
 # Install dependencies using uv sync
-# If uv.lock exists, use it; otherwise resolve on the fly
+# Skip [ml] extra (sentence-transformers/torch) to keep image small.
+# Corpus falls back to TF-IDF keyword search automatically.
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ -f uv.lock ]; then \
         uv sync --frozen --no-install-project --no-editable; \
@@ -70,6 +74,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Set PYTHONPATH so imports work correctly
 ENV PYTHONPATH="/app/env:$PYTHONPATH"
+
+ENV UV_HTTP_TIMEOUT=300
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

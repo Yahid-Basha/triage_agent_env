@@ -1,0 +1,614 @@
+[
+  {
+    "ticket_id": "TRAIN-00001",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "BGP peer 10.0.0.1 in Active state, session not establishing",
+    "description": "Router CORE-02 BGP session to peer 10.0.0.1 (AS65100) has been in Active state for 2 hours. Ping to peer IP works. No previous issues with this peer. How do I diagnose and fix?",
+    "gold_cited_ids": [
+      "KB-00001"
+    ],
+    "gold_resolution": "Run `show bgp neighbors 10.0.0.1` to confirm state and check for NOTIFICATION messages. Verify AS number matches with `neighbor 10.0.0.1 remote-as 65100`. Check for ACLs blocking TCP port 179 both inbound and outbound. Fix any mismatch found, then use `clear ip bgp 10.0.0.1 soft` to re-establish."
+  },
+  {
+    "ticket_id": "TRAIN-00002",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "Users on floor 4 getting APIPA addresses (169.254.x.x)",
+    "description": "15 users on floor 4 (VLAN 40, 10.40.0.0/24) are getting APIPA addresses this morning. Network team confirmed DHCP server is running. Yesterday floor 4 switches were patched.",
+    "gold_cited_ids": [
+      "KB-00006"
+    ],
+    "gold_resolution": "Check `show ip dhcp pool` for VLAN 40 scope utilization. If near 100%, check for stale leases using `show ip dhcp binding` cross-referenced against the ARP table. Clear stale bindings with `clear ip dhcp binding <ip>`. If the pool isn't exhausted, check that DHCP helper-address is configured on the VLAN 40 SVI after last night's switch patching."
+  },
+  {
+    "ticket_id": "TRAIN-00003",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "Cannot resolve corp-sharepoint.corp.example.com from laptop on corporate wifi",
+    "description": "My laptop on the office wifi can't reach corp-sharepoint.corp.example.com. The website loads fine on my phone using mobile data. Ping by IP works. nslookup shows 'server can't find corp-sharepoint.corp.example.com: NXDOMAIN'.",
+    "gold_cited_ids": [
+      "KB-00003"
+    ],
+    "gold_resolution": "Run `nslookup corp-sharepoint.corp.example.com 10.10.1.53` directly targeting the corp DNS server. If this works, the laptop is using a wrong DNS server (likely 8.8.8.8). Check DHCP-assigned DNS: `ipconfig /all`. Fix: update DHCP option 6 for the wifi VLAN to use 10.10.1.53, then run `ipconfig /flushdns && ipconfig /renew` on the laptop."
+  },
+  {
+    "ticket_id": "TRAIN-00004",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "High CRC error rate on GigabitEthernet0/1 of access switch SW-FLOOR2-01",
+    "description": "Network monitoring alert: 1.8% CRC error rate on GigabitEthernet0/1 of SW-FLOOR2-01 for the past 3 hours. Port connects to a workstation. The workstation reports slow network but no drops. What should I check?",
+    "gold_cited_ids": [
+      "KB-00007"
+    ],
+    "gold_resolution": "First verify duplex settings: `show interface GigabitEthernet0/1 | include duplex` \u2014 if mismatch (e.g., switch is full-duplex, workstation is half or auto), this is the most likely cause. Hard-set: `speed 1000` and `duplex full` on the switch port. If duplex is OK, inspect the patch cable; replace with a Cat5e or Cat6 cable. Clear counters and monitor for 10 min after each change."
+  },
+  {
+    "ticket_id": "TRAIN-00005",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "F5 pool members showing red for app-backend-pool",
+    "description": "app-backend-pool on the F5 LTM has all 4 members marked down. The application backend servers are running and healthy \u2014 direct curl works. The pool went down after the backend team added HTTPS redirect (HTTP to HTTPS) to their nginx config.",
+    "gold_cited_ids": [
+      "KB-00004"
+    ],
+    "gold_resolution": "The F5 HTTP health monitor is failing because the backend now redirects HTTP to HTTPS (301), but the monitor expects a 200. Fix: update the pool monitor to HTTPS type with `send: HEAD /health HTTP/1.1\\r\\nHost: <backend-hostname>\\r\\n\\r\\n` and `recv: 200 OK`. Alternatively, create a dedicated health endpoint that responds 200 on HTTP without redirect."
+  },
+  {
+    "ticket_id": "TRAIN-00006",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "Site-to-site VPN to branch keeps dropping, reestablishes after a few minutes",
+    "description": "VPN tunnel to our Singapore branch office (peer 198.51.100.22) drops every 20-40 minutes and reestablishes on its own. Users can work but experience interruptions. WAN latency to Singapore averages 180ms.",
+    "gold_cited_ids": [
+      "KB-00005"
+    ],
+    "gold_resolution": "With 180ms WAN latency, the default DPD timeout of 30s with 5 retries may be too aggressive if there are occasional latency spikes. Check DPD config: increase `dpd 60 retry 10`. Also verify IKE proposal parameters match on both sides using `show crypto ikev2 sa detail` and compare algorithms and DH group with the Singapore end. Most likely cause: DPD timeout given the high-latency path."
+  },
+  {
+    "ticket_id": "TRAIN-00007",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "OSPF adjacency stuck in EXSTART between dist-01 and dist-02",
+    "description": "Two distribution layer routers that were previously in FULL OSPF state are now stuck in EXSTART. This happened after a maintenance window where interface MTU was changed on dist-01 for jumbo frames.",
+    "gold_cited_ids": [
+      "KB-00002"
+    ],
+    "gold_resolution": "EXSTART stuck state is the classic symptom of MTU mismatch. During maintenance, dist-01's interface MTU was changed but dist-02 was not updated. OSPF DBD packets use full MTU and fail to exchange. Fix: either align MTUs on both sides, or add `ip ospf mtu-ignore` on both interfaces as a workaround. After the fix, the adjacency should reach FULL state within 40 seconds (dead timer expiry)."
+  },
+  {
+    "ticket_id": "TRAIN-00008",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "User jsmith locked out of AD, keeps getting locked again after unlock",
+    "description": "User jsmith's AD account keeps getting locked every 10-15 minutes. I unlock it but it locks again. He changed his password last week. He uses Windows laptop, Outlook, Teams, and a shared network drive.",
+    "gold_cited_ids": [
+      "KB-00008"
+    ],
+    "gold_resolution": "Recurring lockouts indicate a service or device is using the old password. Use Microsoft's LockoutStatus.exe or check Event ID 4740 on the PDC Emulator to find the source computer. Common culprits: mapped network drive with saved credentials, Outlook profile with cached credentials, or a mobile device. Once source is found, update the password there. The user should also run `cmdkey /list` to see all stored credentials and clear outdated ones."
+  },
+  {
+    "ticket_id": "TRAIN-00009",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "New employee can't log into Salesforce \u2014 account not provisioned",
+    "description": "New hire Sarah Williams started today but cannot log into Salesforce. Her Okta account exists and she can log into Okta SSO. Salesforce login gives 'Invalid username, password, security token; or user locked out'.",
+    "gold_cited_ids": [
+      "KB-00009"
+    ],
+    "gold_resolution": "Salesforce user was not provisioned through SCIM. Check Okta Admin > Salesforce app > Assignments to confirm Sarah is assigned. If assigned but not provisioned, check Okta System Log for SCIM push errors. Manual fix: in Okta, click 'Force Sync' for the Salesforce app for this user, which will push a SCIM POST /Users request to create her Salesforce account. Verify she appears in Salesforce Setup > Users after sync."
+  },
+  {
+    "ticket_id": "TRAIN-00010",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "User locked out of MFA, lost phone with authenticator app",
+    "description": "User Michael Torres lost his phone. He has Google Authenticator installed for MFA. He cannot log into any corporate systems. Please reset his MFA. User has been verified in person with badge.",
+    "gold_cited_ids": [
+      "KB-00011"
+    ],
+    "gold_resolution": "In Okta Admin Console, go to Directory > People, search for Michael Torres. Click the user > More Actions > Reset Multifactor. Before confirming, terminate all his active sessions under 'Current Sessions'. After reset, Michael will receive an activation email to re-enroll MFA. Log this action in the IT ticket with: user name, time, admin performing reset, and verification method (in-person badge scan)."
+  },
+  {
+    "ticket_id": "TRAIN-00011",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "svc-backup-prod password expired \u2014 backup jobs failing",
+    "description": "Nightly backup jobs failing with authentication errors since 02:00 today. Service account svc-backup-prod password expired per 90-day policy. Account is used by the Veeam backup software and a cron job on backup-server-01.",
+    "gold_cited_ids": [
+      "KB-00012"
+    ],
+    "gold_resolution": "Before changing the password, update it in CyberArk/Vault first. Then rotate in AD: `Set-ADAccountPassword -Identity svc-backup-prod -NewPassword (ConvertTo-SecureString '<new-pw>' -AsPlainText -Force) -Reset`. Update Veeam Backup & Replication: Veeam Console > Managed Servers > right-click > Properties > update credentials. Update the cron job: edit `/etc/backup/config` on backup-server-01. Verify next backup run succeeds before closing the ticket."
+  },
+  {
+    "ticket_id": "TRAIN-00012",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "API token for github-integration-bot returns 401 \u2014 CI pipeline failing",
+    "description": "GitHub integration CI pipeline has been failing for 2 days with HTTP 401. The github-integration-bot token is used in Jenkins to push build status to GitHub. Token was working fine last month.",
+    "gold_cited_ids": [
+      "KB-00013"
+    ],
+    "gold_resolution": "The GitHub PAT has likely expired (90-day policy). Generate a new token in GitHub: Settings > Developer Settings > Personal access tokens > Fine-grained tokens. Set scopes to repo status, read:packages. Update in Vault: `vault kv put secret/svc/github-integration-bot/token value=<new-token>`. Update Jenkins credential: Manage Jenkins > Credentials > update the github-api-token credential. Verify by manually triggering the CI pipeline. Revoke the old token after confirming the new one works."
+  },
+  {
+    "ticket_id": "TRAIN-00013",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "notification-service pods CrashLoopBackOff after new deployment",
+    "description": "notification-service v1.5.2 just deployed. 2 of 3 pods are in CrashLoopBackOff immediately. Deployment was not like this in staging. How do I diagnose?",
+    "gold_cited_ids": [
+      "KB-00017"
+    ],
+    "gold_resolution": "Get the previous container logs with `kubectl logs <pod-name> --previous` \u2014 this shows what happened before the crash. Check `kubectl describe pod <pod-name>` for the exit reason under Events. Common causes: OOMKilled (check actual memory limit vs usage), missing ConfigMap or Secret reference (check env variable sections), or liveness probe failing too quickly (increase `initialDelaySeconds`). If the error is 'CreateContainerConfigError', a referenced Secret or ConfigMap doesn't exist in the namespace."
+  },
+  {
+    "ticket_id": "TRAIN-00014",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "search-service high latency after Redis memory alert",
+    "description": "search-service response times degraded from 50ms to 800ms starting an hour ago. Coincides with a Redis memory alert showing 95% usage. Redis has allkeys-lru eviction. What is happening and how to fix?",
+    "gold_cited_ids": [
+      "KB-00019"
+    ],
+    "gold_resolution": "Redis is actively evicting keys under LRU policy, causing cache misses that fall through to the database. Check `redis-cli INFO stats | grep evicted_keys` for the eviction count. Check for keys without TTL: `redis-cli --scan --pattern '*' | xargs -I{} redis-cli ttl {} | grep -c '^-1'`. Quick relief: `redis-cli CONFIG SET maxmemory 4gb` if server has headroom, or identify and flush stale key patterns. Long-term: add TTL to all keys written by search-service."
+  },
+  {
+    "ticket_id": "TRAIN-00015",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "analytics-service intermittently OOM crashing every few hours",
+    "description": "analytics-service has been restarting with OOMKilled every 4-6 hours. Heap dumps show large arrays under ModelCacheManager. The service was recently updated to add a new ML model feature that pre-loads embeddings.",
+    "gold_cited_ids": [
+      "KB-00015"
+    ],
+    "gold_resolution": "Analyze the heap dump with Eclipse MAT \u2014 run the 'Leak Suspects' report and look at the dominator tree under ModelCacheManager. If the cache is storing large in-heap objects, set `maximumSize` on any Guava/Caffeine cache, or move the cache to Redis with a TTL. As an immediate mitigation, increase heap: add `-Xmx4g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/heapdumps/` to JVM flags. This buys time to fix the underlying cache design."
+  },
+  {
+    "ticket_id": "TRAIN-00016",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "TLS certificate expired on internal-api.corp.example.com",
+    "description": "Multiple services reporting SSL handshake errors with internal-api.corp.example.com. Users getting certificate error in browser. Need to renew the certificate urgently. Certificate expired today.",
+    "gold_cited_ids": [
+      "KB-00014"
+    ],
+    "gold_resolution": "Generate a CSR: `openssl req -new -newkey rsa:2048 -nodes -keyout internal-api.key -out internal-api.csr`. Submit to IT-PKI via ServiceNow under 'Certificate > Internal PKI' \u2014 for an expired cert causing outage, mark as P1 for 4-hour SLA. Once cert arrives, install: update `ssl_certificate` and `ssl_certificate_key` in nginx config, run `nginx -t` to validate, then `nginx -s reload`. Verify with `openssl s_client -connect internal-api.corp.example.com:443`."
+  },
+  {
+    "ticket_id": "TRAIN-00017",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "connection pool timeout errors in inventory-service",
+    "description": "inventory-service throwing 'Connection is not available, request timed out after 30000ms' errors under load. Database server is healthy. This happens during peak hour 18:00-19:00 daily.",
+    "gold_cited_ids": [
+      "KB-00016"
+    ],
+    "gold_resolution": "Check Prometheus metric `hikaricp_connections_active` vs `hikaricp_connections_max` during peak. If saturated, take a thread dump (`kill -3 <pid>`) and look for database-blocking threads. Confirm pool config: `maximumPoolSize` should be at least (peak concurrent requests \u00d7 avg query duration). Immediate fix: increase `maximumPoolSize`. Add `connectionTimeout=30000`, `idleTimeout=600000`, `leakDetectionThreshold=60000` to HikariCP config. Enable `hikaricp.connections.active` alerting at 80% of max pool size."
+  },
+  {
+    "ticket_id": "TRAIN-00018",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "prod deployment of billing-service failed, need to rollback",
+    "description": "billing-service v2.8.0 just deployed and error rate jumped to 15%. We need to roll back to the previous version immediately. Service is deployed via Helm.",
+    "gold_cited_ids": [
+      "KB-00020"
+    ],
+    "gold_resolution": "Execute `helm rollback billing-service 0` to roll back to the previous Helm revision (0 means previous). Watch progress: `kubectl rollout status deployment/billing-service --timeout=120s`. Verify in `kubectl get pods` that all pods are Running with recent age. Post to #incidents Slack channel: what happened, rollback executed, impact window. Check `helm history billing-service` to confirm revision before filing post-mortem."
+  },
+  {
+    "ticket_id": "TRAIN-00019",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "SAML SSO broken for jira.corp.example.com \u2014 redirect loop",
+    "description": "Several users reporting redirect loop when logging into jira.corp.example.com using SSO. They get sent to Okta, authenticate, sent back to Jira, and then immediately redirected back to Okta. Direct username/password login works.",
+    "gold_cited_ids": [
+      "KB-00010"
+    ],
+    "gold_resolution": "Install SAML Tracer in Chrome and record the login attempt. Look for the SAMLResponse POST to Jira's ACS URL. Check the `<Conditions NotBefore NotOnOrAfter>` timestamps \u2014 if expired, it's clock skew. Also decode the SAMLResponse and check the `InResponseTo` attribute; if Jira's session is generating duplicate AuthnRequest IDs, clearing browser cookies for jira.corp.example.com resolves the loop. Also verify Jira's Entity ID in Okta config exactly matches Jira's configured Audience (case-sensitive)."
+  },
+  {
+    "ticket_id": "TRAIN-00020",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "OSPF route to 10.20.0.0/16 missing after router replacement",
+    "description": "Router RTR-BRANCH-05 was replaced with new hardware over the weekend. After replacement, OSPF routes to 10.20.0.0/16 are missing from the routing table. The new router is in the same physical location. Can reach adjacent routers via ICMP.",
+    "gold_cited_ids": [
+      "KB-00002"
+    ],
+    "gold_resolution": "Run `show ip ospf neighbor` \u2014 if the new router shows no neighbors or neighbors in INIT state, check area configuration first. Common issue after hardware replacement: the new router was configured with the wrong OSPF area ID. Also check interface MTU \u2014 if the new hardware has different default MTU, EXSTART can get stuck. Use `debug ip ospf adj` to see the exact adjacency failure reason. If area and MTU match, check authentication MD5 keys."
+  },
+  {
+    "ticket_id": "TRAIN-00021",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "OSPF adjacency failing AND external BGP route not appearing",
+    "description": "After adding a new router to the network, two issues: (1) OSPF adjacency with the new router is stuck in EXSTART, (2) The BGP route to 10.99.0.0/24 that OSPF should redistribute is missing. Both issues need root cause.",
+    "gold_cited_ids": [
+      "KB-00001",
+      "KB-00002"
+    ],
+    "gold_resolution": "Two separate root causes. For OSPF EXSTART: check MTU mismatch \u2014 the new router likely has different MTU. Fix with `ip ospf mtu-ignore` on both sides or align MTUs. Once OSPF is FULL, check if 10.99.0.0/24 appears in OSPF LSAs: `show ip ospf database external`. For the BGP issue: verify the route exists in BGP with `show bgp neighbors <peer-ip>` and that redistribution is configured: `redistribute bgp 65001 subnets` in the OSPF config. Both issues together suggest the new router config was applied from a template missing these settings."
+  },
+  {
+    "ticket_id": "TRAIN-00022",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "VPN tunnel flapping AND DHCP pool nearly exhausted at branch",
+    "description": "Branch office Bangkok reporting two issues today: (1) VPN tunnel to HQ keeps resetting every 15 minutes, and (2) DHCP pool for the branch is 94% utilized with only 12 IPs left for 80 devices. Both issues are impacting business.",
+    "gold_cited_ids": [
+      "KB-00005",
+      "KB-00006"
+    ],
+    "gold_resolution": "Two independent issues. For VPN: compare IKE proposals between HQ and Bangkok \u2014 check `debug crypto ikev2` for NO_PROPOSAL_CHOSEN or DPD timeout messages. DH group mismatch or aggressive DPD given the network distance are most common. For DHCP: immediately `show ip dhcp binding` and cross-reference against ARP to find stale leases. Clear stale entries with `clear ip dhcp binding <ip>`. For capacity: reduce lease time from 8d to 1d as a stopgap; plan scope expansion to /23 in the next change window."
+  },
+  {
+    "ticket_id": "TRAIN-00023",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "BGP session flapping since firewall ACL change \u2014 similar to Bangkok VPN issue last month",
+    "description": "BGP session to upstream ISP keeps going Active/Established every 2 hours, similar pattern to the Bangkok branch issue we had. Firewall team made ACL changes 3 days ago. This is the same symptom as ticket TKT-100001.",
+    "gold_cited_ids": [
+      "KB-00001",
+      "TKT-100001"
+    ],
+    "gold_resolution": "Based on TKT-100001, the most likely cause is a firewall ACL killing established TCP sessions after a timeout (the Bangkok case had 7200s = 2 hours, which matches the observed pattern). Check the recent firewall ACL change for any session timeout rules on TCP/179. The fix from TKT-100001 was adding a stateful permit rule for established TCP/179 sessions without a timeout. Run `show bgp neighbors <peer> | include BGP state|Hold time` and compare hold timer (default 180s) against the observed drop frequency."
+  },
+  {
+    "ticket_id": "TRAIN-00024",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "Salesforce users not deprovisioned after offboarding AND SAML cert expired",
+    "description": "Security audit found two identity issues: (1) 8 offboarded employees still have active Salesforce accounts (similar to our previous Okta SCIM incident), (2) The SAML signing cert for Salesforce in Okta expires in 5 days.",
+    "gold_cited_ids": [
+      "KB-00009",
+      "KB-00010"
+    ],
+    "gold_resolution": "Two issues. For SCIM deprovisioning: check Okta System Log for deprovisioning push failures. Likely cause: 'Deactivate Users' toggle is OFF in Okta > Salesforce > Provisioning (this was the same root cause as TKT-100007). Enable it and manually trigger deprovisioning for the 8 users. For the expiring cert: in Okta, navigate to the Salesforce SAML app > Sign On > View SAML Setup Instructions. Generate a new signing certificate, download it, then update Salesforce: Setup > Single Sign-On Settings > update the Identity Provider Certificate. Update before expiry to avoid an outage."
+  },
+  {
+    "ticket_id": "TRAIN-00025",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "orders-service CrashLoopBackOff AND database connection errors on related services",
+    "description": "After today's deployment, orders-service pods are in CrashLoopBackOff (3 of 5 pods). Additionally, fulfillment-service (which shares the orders DB) is reporting connection pool timeouts. Both issues started at 14:00.",
+    "gold_cited_ids": [
+      "KB-00017",
+      "KB-00016"
+    ],
+    "gold_resolution": "Two related issues. For orders-service CrashLoopBackOff: `kubectl logs <pod> --previous` to see crash reason. Check Events in `kubectl describe pod` \u2014 likely OOMKilled or config error. For the connection pool issue: the CrashLoopBackOff causes orders-service to repeatedly connect and disconnect, leaving connections in the pool that aren't properly closed. Check Prometheus `hikaricp_connections_active` for fulfillment-service \u2014 if near max, the pool is being starved by zombie connections from crashing orders-service pods. Resolve the crash first, then restart fulfillment-service to flush the connection pool."
+  },
+  {
+    "ticket_id": "TRAIN-00026",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "Redis memory pressure causing evictions AND API gateway 504 timeouts",
+    "description": "Two linked issues: redis cluster is at 92% memory with active evictions, and the checkout API is returning 504 timeouts. The checkout service relies heavily on Redis for session and cart caching. Started 2 hours ago.",
+    "gold_cited_ids": [
+      "KB-00019",
+      "KB-00018"
+    ],
+    "gold_resolution": "Redis evictions are causing cache misses that increase checkout-service database load, which causes slow queries and timeouts at the API gateway. For Redis: immediately check `redis-cli INFO stats | grep evicted_keys` and find keys without TTL. Set `maxmemory-policy allkeys-lru` if not set. For 504s: in gateway logs check which upstream is timing out. Do not increase gateway timeout \u2014 it masks the root cause. Fix Redis memory pressure first, then verify checkout response times normalize. Long-term: add TTL to all cart/session keys in checkout-service code."
+  },
+  {
+    "ticket_id": "TRAIN-00027",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "service account svc-k8s-deploy locked after rotation \u2014 deployment pipeline broken",
+    "description": "Deployment pipeline failed at 11:00. Symptoms: Jenkins says 'LDAP authentication failed for svc-k8s-deploy'. The account was in a password rotation window this morning. We also confirmed the Kubernetes imagePullSecret was updated but now K8s pods won't start.",
+    "gold_cited_ids": [
+      "KB-00012",
+      "TKT-100006"
+    ],
+    "gold_resolution": "Based on TKT-100006, incomplete password rotation is the root cause pattern. Unlock the account in AD: `Unlock-ADAccount -Identity svc-k8s-deploy`. Check all dependencies: (1) Jenkins \u2014 update credentials in Manage Jenkins > Credentials, (2) Kubernetes \u2014 verify imagePullSecret: `kubectl get secret regcred -n prod -o yaml | base64 -d` to confirm new password is reflected, (3) Any Ansible vault or Helm secrets referencing this account. Follow the rotation procedure in KB-00012: update Vault first, then AD, then each dependent service in sequence."
+  },
+  {
+    "ticket_id": "TRAIN-00028",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "JVM OOM crashes AND high DB connection count \u2014 both on recommendation-engine",
+    "description": "recommendation-engine is being OOM-killed every few hours. Additionally, DBA team reports the service holds 45 of 50 available DB connections even when idle. Heap dumps show a large object under ModelCacheManager.",
+    "gold_cited_ids": [
+      "KB-00015",
+      "KB-00016"
+    ],
+    "gold_resolution": "Two issues but same root: the ModelCacheManager is both causing heap exhaustion and holding DB connections to populate the cache on demand. From the heap dump, identify what ModelCacheManager is storing in memory (likely large float arrays for embeddings \u2014 see TKT-100015 for precedent). Fix: offload ModelCacheManager from heap to Redis with TTL. For the connection leak: add `leakDetectionThreshold=60000` to HikariCP config to identify which code path holds connections open. Increase heap to `-Xmx4g` as interim while the cache redesign deploys."
+  },
+  {
+    "ticket_id": "TRAIN-00029",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "DHCP pool exhausted on IoT VLAN AND high interface errors on connected switch",
+    "description": "IoT VLAN 60 DHCP pool is full (200/200 leases assigned). Simultaneously, the access switch serving this VLAN shows 3.1% CRC error rate on its uplink. Both started after adding a new batch of sensors yesterday.",
+    "gold_cited_ids": [
+      "KB-00006",
+      "KB-00007"
+    ],
+    "gold_resolution": "Two issues from yesterday's addition. For DHCP: identify stale leases from retired sensors using `show ip dhcp binding` vs ARP table. Clear orphaned entries. Reduce lease time to 1 day and consider expanding scope to /23 to accommodate growth. For CRC errors: the new sensor installation may have involved cable work near the uplink \u2014 inspect the patch cable for the uplink port, check connector seating and duplex settings. Run `show interface | include CRC` baseline, fix duplex if mismatched, replace cable if errors persist after duplex fix."
+  },
+  {
+    "ticket_id": "TRAIN-00030",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "MFA reset needed AND AD account locked for same user \u2014 urgent, user is executive",
+    "description": "Executive user David Chen is locked out of all systems. His AD account is locked (bad password count 12), AND he lost his phone with MFA app. He is verified via video call. Need both resolved within 15 minutes.",
+    "gold_cited_ids": [
+      "KB-00008",
+      "KB-00011"
+    ],
+    "gold_resolution": "Parallel actions. For AD lockout: `Unlock-ADAccount -Identity dchen` in PowerShell. Check Event ID 4740 on PDC Emulator for lockout source \u2014 likely his old phone or iPad with cached corporate credentials. For MFA: Okta Admin > Directory > People > dchen > More Actions > Reset Multifactor. First terminate all active sessions, then reset MFA. Log both actions with video call verification. Advise David to update credentials on all devices after regaining access to prevent immediate re-lockout."
+  },
+  {
+    "ticket_id": "TRAIN-00031",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "billing-service API 504 timeouts AND recent deployment rollback needed",
+    "description": "billing-service v3.1.0 was deployed 30 minutes ago. API gateway is now showing 504 timeouts on /billing/invoice. The previous version v3.0.8 did not have this issue. We need to investigate and potentially rollback.",
+    "gold_cited_ids": [
+      "KB-00018",
+      "KB-00020"
+    ],
+    "gold_resolution": "Collect evidence first: check API gateway logs for `upstream_response_time` on /billing/invoice requests. If upstream times out consistently (>30s), rollback is the right call. Execute: `helm rollback billing-service 0`. Monitor: `kubectl rollout status deployment/billing-service --timeout=120s`. If the 504 is intermittent (partial rollout issue), try `kubectl rollout restart deployment/billing-service` first. For root cause investigation post-rollback: compare v3.0.8 vs v3.1.0 changelogs for any database queries or external calls added to the invoice endpoint."
+  },
+  {
+    "ticket_id": "TRAIN-00032",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "checkout-service high memory AND Redis cache not working after deployment",
+    "description": "After deploying checkout-service v2.2, heap usage climbed from 800MB to 3.5GB in 2 hours. Additionally, Redis cache hit rate dropped from 88% to 12%, suggesting caching is broken. Both started with v2.2.",
+    "gold_cited_ids": [
+      "KB-00015",
+      "KB-00019"
+    ],
+    "gold_resolution": "Likely related: v2.2 may have introduced unbounded in-memory cache that bypasses Redis or broke the Redis TTL logic. Capture a heap dump: `jmap -dump:format=b,file=/tmp/heap.hprof <pid>`. Analyze with Eclipse MAT \u2014 if a cache data structure is the largest retained object, it was moved from Redis to heap in v2.2. Check Redis: `redis-cli INFO stats | grep hit_rate` to confirm misses. Review the v2.2 diff for cache manager changes. Quick fix: rollback or increase heap to `-Xmx4g`. Fix: ensure all cache writes use Redis with TTL \u2014 check the CacheConfig class for `maximumSize` and `ttl` settings."
+  },
+  {
+    "ticket_id": "TRAIN-00033",
+    "domain": "networking",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Multiple network failures after datacenter fiber maintenance: BGP, OSPF, DHCP all affected",
+    "description": "After last night's datacenter fiber maintenance window, three issues appeared: (1) BGP session to ISP dropping, (2) OSPF adjacency between core and dist not forming, (3) One VLAN DHCP pool showing exhaustion alerts. Maintenance involved re-patching several cables. Need systematic root cause for all three.",
+    "gold_cited_ids": [
+      "KB-00001",
+      "KB-00002",
+      "KB-00006"
+    ],
+    "gold_resolution": "Three issues, likely caused by the cable re-patching. BGP: check for ACL rules blocking TCP 179 if cables were re-patched through a firewall segment; also check MD5 password on the BGP session. OSPF: fiber re-patching may have changed the MTU \u2014 physical cabling changes can affect VLAN configuration. Run `show ip ospf neighbor` to see stuck state. If EXSTART, check MTU and area config. DHCP: the re-patching may have disconnected some devices temporarily, causing them to request new leases without releasing old ones. Cross-reference `show ip dhcp binding` against ARP. Clear stale bindings from devices that were temporarily offline."
+  },
+  {
+    "ticket_id": "TRAIN-00034",
+    "domain": "identity",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "SSO broken for multiple apps, SCIM not working, AND an API token expiry \u2014 all identity issues",
+    "description": "Major identity incident: (1) Users can't SSO into Confluence and JIRA \u2014 redirect loop in both, (2) Okta SCIM provisioning stopped pushing to GitHub after midnight, (3) The monitoring API token for the identity health dashboard shows 401. All three started around midnight.",
+    "gold_cited_ids": [
+      "KB-00010",
+      "KB-00009",
+      "KB-00013"
+    ],
+    "gold_resolution": "All three are related to an Okta signing certificate rotation that happened at midnight. For SSO: the Confluence and JIRA SAML SPs have outdated signing certificates \u2014 update the SP trust with the new Okta cert fingerprint (Settings > Security > SSO in each app). For SCIM: Okta's SCIM Bearer tokens for GitHub may have been regenerated as part of the rotation \u2014 check Okta System Log for 401 errors in GitHub SCIM push events, regenerate the token in GitHub and update in Okta. For the monitoring token: the identity health dashboard uses a service account token that was invalidated \u2014 rotate per KB-00013 zero-downtime pattern."
+  },
+  {
+    "ticket_id": "TRAIN-00035",
+    "domain": "app_support",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Platform-wide degradation: 504s, pod crashes, and Redis OOM all occurring simultaneously",
+    "description": "Widespread platform issue. api-gateway showing 15% 504 error rate. Six pods in CrashLoopBackOff across three services. Redis at 99% memory with active evictions. All three issues started within 5 minutes of each other at 16:00. No deployments today.",
+    "gold_cited_ids": [
+      "KB-00017",
+      "KB-00018",
+      "KB-00019"
+    ],
+    "gold_resolution": "This is a cascading failure starting from Redis. Redis at 99% memory caused mass evictions (KB-00019), which caused cache misses across all services, which caused downstream DB query spikes. Services with OOM-prone configurations (KB-00017) crashed under the DB load, entering CrashLoopBackOff. The pod crashes further increased Redis connection pressure from reconnection storms. Resolution priority: (1) Immediately scale Redis memory: `redis-cli CONFIG SET maxmemory 8gb`. (2) Identify and flush keys without TTL. (3) For crashed pods, check `kubectl logs --previous` \u2014 likely OOMKilled from increased memory pressure. (4) For 504s, the upstream services will recover as Redis stabilizes. Do not increase gateway timeout (KB-00018)."
+  },
+  {
+    "ticket_id": "TRAIN-00036",
+    "domain": "identity",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Service account breach suspected \u2014 need to rotate credentials and audit all usages",
+    "description": "Security team flagged unusual API calls from svc-reporting-api between 03:00-04:00. Token activity from an unexpected IP. We need to: (1) immediately revoke the current token, (2) audit all services using this account, (3) rotate the AD password, (4) check if MFA was bypassed.",
+    "gold_cited_ids": [
+      "KB-00013",
+      "KB-00012",
+      "KB-00011"
+    ],
+    "gold_resolution": "Emergency sequence: (1) Revoke the API token immediately per KB-00013 emergency revocation path \u2014 revoke first, accept brief outage, then update consumers. `DELETE /api/v1/tokens/<token-id>`. (2) Rotate AD password per KB-00012 \u2014 update Vault, then rotate in AD: `Set-ADAccountPassword -Identity svc-reporting-api -Reset`. Update all consumers: Jenkins, K8s secrets, any config files. (3) If svc-reporting-api has MFA capability check per KB-00011 \u2014 for service accounts, MFA is typically disabled; verify the account type. (4) Preserve audit logs before any cleanup. Involve the security team for forensic review. File a P1 security incident."
+  },
+  {
+    "ticket_id": "TRAIN-00037",
+    "domain": "networking",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "New branch office cannot connect to corporate \u2014 VPN, BGP redistribution, and DNS all broken",
+    "description": "New branch office in Hyderabad brought online today. Three issues discovered: (1) VPN tunnel shows IKE_SA_INIT OK but CHILD_SA fails, (2) BGP routes from the branch are not appearing in the core routing table, (3) Branch users cannot resolve internal corporate DNS names.",
+    "gold_cited_ids": [
+      "KB-00005",
+      "KB-00001",
+      "KB-00003"
+    ],
+    "gold_resolution": "Three config issues for the new site. VPN CHILD_SA failure: this is Phase 2 (IPSec) failure after Phase 1 succeeded. Check traffic selectors \u2014 the branch proxy-id may not match HQ's. Verify `show crypto ipsec sa` for mismatched SA selectors. Also verify PFS group matches on both sides. BGP routing: once VPN is up, check if BGP session forms but routes aren't advertised \u2014 verify `network` statements or `redistribute connected` in BGP config. Confirm no route-map filtering the new 10.x.x.x/24 prefix. DNS: branch DHCP must point to 10.10.1.53 and 10.10.2.53 (corporate DNS), not local ISP resolvers. Check DHCP option 6 configuration on the branch DHCP server or router."
+  },
+  {
+    "ticket_id": "TRAIN-00038",
+    "domain": "app_support",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Post-deployment: OOM crashes, DB pool exhaustion, AND a needed rollback with DB migration concern",
+    "description": "Release v5.0.0 was deployed 2 hours ago. Three issues: (1) user-profile service OOM-crashing, (2) orders-service DB connections exhausted, (3) We want to rollback but v5.0.0 included a DB schema migration \u2014 need to understand if rollback is safe.",
+    "gold_cited_ids": [
+      "KB-00015",
+      "KB-00016",
+      "KB-00020"
+    ],
+    "gold_resolution": "Address in order. DB migration safety first: check `/db/migrations/` for a `V<n>__down.sql`. If exists, rollback is safe. If not, escalate to DBA \u2014 rolling back the app without rolling back the schema may break data integrity. For OOM: take heap dump before rollback to preserve evidence: `jmap -dump:format=b,file=/tmp/heap.hprof <pid>`. For connection pool: thread dump to identify holders. If DBA approves rollback: `helm rollback user-profile 0` and `helm rollback orders-service 0`. Monitor post-rollback. If no down migration: consult KB-00020 \u2014 VM-based apps use symlink rollback. For Kubernetes: rollback app, leave DB schema, add compatibility code, and schedule a proper schema rollback in next maintenance window."
+  },
+  {
+    "ticket_id": "TRAIN-00039",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "Cisco Catalyst 9300 firmware upgrade causing LACP bundle failures",
+    "description": "After upgrading Catalyst 9300 switches to IOS-XE 17.12.3, LACP bundles between the 9300 and our Nexus 7K are randomly dropping one member port every few hours. No runbook exists for 9300/Nexus cross-vendor LACP issues.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to L2 network team and open a TAC case with Cisco. No current runbook covers IOS-XE 17.12.3 compatibility with Nexus LACP. Collect: `show lacp neighbor detail`, `show etherchannel summary`, and syslog from both platforms during a bundle drop event."
+  },
+  {
+    "ticket_id": "TRAIN-00040",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "FIDO2/WebAuthn passkey not working on new Lenovo T16 hardware",
+    "description": "New batch of Lenovo T16 laptops cannot use FIDO2 passkeys for corporate SSO. The built-in fingerprint reader is not being recognized as a FIDO2 authenticator. Other laptop models work fine.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to endpoint team and the identity platform team. FIDO2/WebAuthn hardware compatibility for the Lenovo T16 fingerprint reader is not covered in any current KB article. Open a ticket with the hardware vendor and check Windows Hello for Business compatibility matrix for this model."
+  },
+  {
+    "ticket_id": "TRAIN-00041",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": true,
+    "title": "Kafka consumer group lag spike on recommendation topic \u2014 no runbook",
+    "description": "Kafka consumer group recommendation-consumer is showing 4.2M message lag on the recommendations topic, growing. The consumer is a custom Rust application. No prior incidents with this system. No runbook exists.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the data engineering team who owns the Rust consumer. There is no runbook for Kafka consumer lag in this system. Collect: consumer group lag via `kafka-consumer-groups.sh --describe`, consumer logs, and Kafka broker metrics for the partition assignment."
+  },
+  {
+    "ticket_id": "TRAIN-00042",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": true,
+    "title": "Aruba ClearPass NAC blocking new IoT device category",
+    "description": "Newly approved wearable sensors from vendor Bosch are being quarantined by Aruba ClearPass NAC. The device fingerprint is not in ClearPass and there's no policy for this device class. No runbook available.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the network access control team. No runbook or KB article covers Aruba ClearPass NAC device fingerprinting and policy configuration. The NAC team will need to add a device profile for the Bosch wearables and define an appropriate VLAN assignment policy."
+  },
+  {
+    "ticket_id": "TRAIN-00043",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "Entra ID Conditional Access policy blocking external contractors on new EU GDPR laptop policy",
+    "description": "EU-based contractors are being blocked by a new Conditional Access policy that requires a compliant device, but contractors use personal laptops that cannot be enrolled in Intune. No runbook for this scenario.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the Identity Governance team. This scenario \u2014 compliant device CA policy conflicting with contractor BYO laptop policy \u2014 requires a policy exception or a separate CA policy for contractor persona. No current KB article or procedure covers this case."
+  },
+  {
+    "ticket_id": "TRAIN-00044",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "GPU-accelerated ML inference service running out of VRAM \u2014 no precedent",
+    "description": "New GPU inference service for the image classification feature is hitting CUDA out of memory errors (CUDA_ERROR_OUT_OF_MEMORY) on the A10G GPU. This is a new service type and there is no existing runbook or past ticket for GPU memory management.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the ML platform team. GPU VRAM management and CUDA OOM troubleshooting is not covered in any current KB article (existing articles cover JVM heap and Redis memory, not GPU memory). The ML platform team will need to profile GPU memory usage and configure model batching or precision reduction."
+  },
+  {
+    "ticket_id": "TRAIN-00045",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": true,
+    "title": "SD-WAN policy change needed for new video conferencing traffic class",
+    "description": "Cisco Viptela SD-WAN needs a new traffic class and QoS policy for the recently approved Zoom Rooms appliances. No existing runbook covers Viptela SD-WAN QoS policy management.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the SD-WAN team. No KB article or runbook covers Cisco Viptela SD-WAN traffic policy configuration. The SD-WAN team manages policy templates centrally through vManage and will need to create a new data policy for the Zoom Rooms traffic class."
+  },
+  {
+    "ticket_id": "TRAIN-00046",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": true,
+    "title": "BeyondCorp zero-trust access request for a new OT network segment",
+    "description": "Manufacturing OT network segment needs to be onboarded to the BeyondCorp zero-trust access framework. OT devices use legacy protocols (Modbus, DNP3) that are not compatible with the existing BeyondCorp agent. No runbook exists.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the Network Security Architecture team. OT device onboarding to BeyondCorp is not covered in any current KB article \u2014 it requires a specialized architecture review due to the legacy protocol constraints. The team will evaluate options including protocol-aware proxies or separate access control mechanisms."
+  },
+  {
+    "ticket_id": "TRAIN-00047",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "TLS cert expired on internal microservice causing auth failures",
+    "description": "Multiple services failing auth with internal-auth-service.corp.example.com. Error: 'SSL certificate expired'. The cert on this internal service expired overnight. P1 impact: all OAuth token validation is down.",
+    "gold_cited_ids": [
+      "KB-00014",
+      "TKT-100013"
+    ],
+    "gold_resolution": "This is a P1 cert expiry per the pattern in TKT-100013. Request emergency certificate from IT-PKI via ServiceNow P1 ticket (4-hour SLA for cert causing outage). While waiting: generate CSR using `openssl req -new -newkey rsa:2048 -nodes -keyout auth-svc.key -out auth-svc.csr`. Include all SANs the service uses. Once cert arrives, install and reload nginx: `nginx -t && nginx -s reload`. Add cert to the certificate inventory monitoring system immediately after resolution to prevent recurrence."
+  },
+  {
+    "ticket_id": "TRAIN-00048",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "Mass Okta MFA outage after policy rollout \u2014 same root cause as past incident",
+    "description": "At 09:00, 200 users started reporting MFA failures. Okta system log shows policy change last night. Service accounts are also failing. This has a similar pattern to INC-0009.",
+    "gold_cited_ids": [
+      "KB-00011",
+      "INC-0009"
+    ],
+    "gold_resolution": "Based on INC-0009, a policy change was applied to too broad a group. In Okta Admin, check the MFA enforcement policy change from last night \u2014 verify target group. If it was applied to 'All Users' instead of a specific group, revert it immediately. For locked-out service accounts: per INC-0009 remediation, run through the list of service accounts and unlock each one in AD. For human users: once the policy is reverted, their next login should prompt MFA enrollment if they weren't previously enrolled. Document the fix and add the 'second admin confirmation' control from INC-0009 prevention section."
+  },
+  {
+    "ticket_id": "TRAIN-00049",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "All internet-facing services offline \u2014 BGP route leak suspected",
+    "description": "Internet-facing services unreachable externally since 14:00. Internal-to-internet traffic fine. Suspected BGP route leak to upstream provider based on traceroute results showing traffic entering our AS but not returning. Similar to INC-0001.",
+    "gold_cited_ids": [
+      "KB-00001",
+      "INC-0001"
+    ],
+    "gold_resolution": "Per INC-0001 precedent: immediately `neighbor <peer-ip> shutdown` on the BGP session to the upstream to stop the leak. Investigate route-map configuration: `show route-map EXPORT_TO_UPSTREAM` \u2014 check for missing deny entries that are allowing private prefixes to leak. Add a deny entry for 10.0.0.0/8 and any other RFC-1918 prefixes if missing. After fixing the route-map, re-enable the session: `no neighbor <peer-ip> shutdown`. Run `show ip bgp neighbors <peer-ip> advertised-routes | grep 10\\.` to confirm no private routes are being advertised."
+  },
+  {
+    "ticket_id": "TRAIN-00050",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "Deployment rollback needed but has DB schema migration \u2014 same concern as recent incident",
+    "description": "We deployed catalog-service v3.5.0 which included DB migration V38 that added two tables. Service is unstable and we need to rollback. Concerned about the DB migration per INC-0007.",
+    "gold_cited_ids": [
+      "KB-00020",
+      "INC-0007"
+    ],
+    "gold_resolution": "Per INC-0007 precedent, check if V38 has a corresponding down migration script in `/db/migrations/V38__down.sql`. If yes, the rollback is safe: `helm rollback catalog-service 0`, then run the down migration through the DBA team. If no down migration exists (like INC-0007), do NOT rollback blindly \u2014 the new tables may already have data. Options: (1) Keep the app at the new version and hotfix, (2) DBA evaluates whether the new tables are empty and can be dropped safely, (3) Accept the partial rollback knowing the tables will be orphaned. Create post-mortem requirement: all destructive or additive schema changes require down migrations."
+  }
+]

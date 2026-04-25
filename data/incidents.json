@@ -1,0 +1,112 @@
+[
+  {
+    "incident_id": "INC-0001",
+    "title": "BGP route leak caused 45-minute partial internet outage",
+    "severity": "SEV1",
+    "domain": "networking",
+    "summary": "A misconfigured route-map on PE02 caused BGP routes to be advertised to the wrong AS. 30% of internet-bound traffic was blackholed for 45 minutes.",
+    "root_cause": "Route-map 'EXPORT_TO_UPSTREAM' was missing a deny entry for the 10.0.0.0/8 summary. During a BGP peer reset, private routes were briefly leaked to the upstream provider AS before the route-map was re-evaluated.",
+    "remediation": "Removed the offending BGP session briefly using `neighbor 203.0.113.1 shutdown` to stop the leak, corrected the route-map, and re-enabled the session. Traffic restored after 8 minutes.",
+    "prevention": "Added BGP prefix lists as a secondary defense alongside route-maps. Now running `show ip bgp neighbors <peer> advertised-routes` validation in change procedure checklist.",
+    "date": "2025-06-15"
+  },
+  {
+    "incident_id": "INC-0002",
+    "title": "OSPF reconvergence loop caused 20-minute site isolation",
+    "severity": "SEV2",
+    "domain": "networking",
+    "summary": "Router area reconfig during maintenance introduced an OSPF area mismatch that caused the distribution layer to oscillate between two routing states for 20 minutes.",
+    "root_cause": "One router in the distribution layer was incorrectly configured as area 0 while adjacent routers expected area 1. The MTU was also mismatched at 9000 vs 1500 bytes, preventing stable adjacency.",
+    "remediation": "Fixed area configuration to match. Added `ip ospf mtu-ignore` as a transitional measure. Adjacencies restabilized within 90 seconds.",
+    "prevention": "Added OSPF configuration validation check to change management procedure. MTU consistency check added to pre-change checklist.",
+    "date": "2025-08-03"
+  },
+  {
+    "incident_id": "INC-0003",
+    "title": "Payment service outage: database connection pool exhaustion",
+    "severity": "SEV1",
+    "domain": "app_support",
+    "summary": "Payment service went down for 2.5 hours due to database connection pool exhaustion triggered by a slow query introduced in release 3.2.1.",
+    "root_cause": "Release 3.2.1 added a new report query without using a connection timeout. During peak traffic, 15 slow instances of this query held all pool connections (pool size: 20). Subsequent requests queued until timeout.",
+    "remediation": "Emergency rollback of 3.2.1. Pool size increased from 20 to 50 as immediate mitigation. Root query fixed with a covering index in v3.2.2.",
+    "prevention": "Added statement_timeout=30s to all connection strings. Pool exhaustion alerts added at 80% utilization. Mandatory load test for any PR touching database queries.",
+    "date": "2025-03-03"
+  },
+  {
+    "incident_id": "INC-0004",
+    "title": "Okta SSO cert expiry caused 3-hour authentication outage",
+    "severity": "SEV1",
+    "domain": "identity",
+    "summary": "The Okta signing certificate used by 14 SAML service providers expired without warning, locking out all users from SSO-integrated applications for 3 hours.",
+    "root_cause": "The Okta signing certificate had a 3-year TTL and was originally provisioned in 2022. No automated expiry monitoring existed. The certificate expired at 00:00 UTC, affecting early-shift users first.",
+    "remediation": "Generated new signing certificate in Okta. Updated SP metadata (cert fingerprint) for all 14 integrations manually. Users regained access within 3 hours as integrations were fixed one by one.",
+    "prevention": "Added Okta signing cert to TLS certificate inventory with 60-day alert. Created runbook for SP metadata updates. Reduced cert lifetime to 1 year on renewal.",
+    "date": "2025-04-19"
+  },
+  {
+    "incident_id": "INC-0005",
+    "title": "Kubernetes memory limits caused cascading pod restarts in prod",
+    "severity": "SEV2",
+    "domain": "app_support",
+    "summary": "12 microservices experienced CrashLoopBackOff simultaneously after a Helm chart update incorrectly set memory limits to 512Mi for all services regardless of actual requirements.",
+    "root_cause": "A shared Helm chart template had a default memory limit value (`512Mi`) that was applied globally when the chart was upgraded. Services with actual requirements of 1-4GB were immediately OOMKilled.",
+    "remediation": "Helm rollback to previous chart version (`helm rollback infra-services 0`) restored correct limits. Affected pods recovered within 5 minutes.",
+    "prevention": "Memory limits are now service-specific values in values.yaml rather than chart defaults. Added pre-deploy validation that checks limits against known baselines.",
+    "date": "2025-07-22"
+  },
+  {
+    "incident_id": "INC-0006",
+    "title": "Redis cluster split-brain caused duplicate order processing",
+    "severity": "SEV2",
+    "domain": "app_support",
+    "summary": "During a Redis cluster node failure, a split-brain condition led to two Redis primary nodes accepting writes for the same key space, causing 340 orders to be processed twice.",
+    "root_cause": "Redis sentinel quorum was set to 1 (minimum), allowing a single sentinel to promote a replica to primary even without confirmation from other sentinels. Network partition isolated one sentinel, which incorrectly promoted a new primary.",
+    "remediation": "Fenced the isolated primary using Redis AUTH rotation. Reconciled duplicated orders with finance (340 items refunded). Increased sentinel quorum to 2.",
+    "prevention": "Changed `sentinel quorum` to 2 (majority of 3 sentinels). Added sentinel quorum checks to infrastructure monitoring. Post-mortem review identified need for idempotency keys in order processing.",
+    "date": "2025-05-11"
+  },
+  {
+    "incident_id": "INC-0007",
+    "title": "Schema migration rollback required DBA intervention",
+    "severity": "SEV2",
+    "domain": "app_support",
+    "summary": "Release 4.1 included a schema migration that dropped a non-null column used by a legacy batch job. The application rollback succeeded but the DB migration had no rollback script, requiring manual DBA recovery.",
+    "root_cause": "Migration V42 dropped column `legacy_batch_flag`. The column was referenced by a nightly batch job not covered by the application's test suite. The batch job ran at 23:00, 3 hours after deployment, and failed.",
+    "remediation": "DBA restored the column from the pre-migration backup snapshot (15-minute RPO). Batch job recovered. Column retained with deprecation notice.",
+    "prevention": "Mandatory down-migration (rollback SQL) for all destructive schema changes. Added legacy batch jobs to integration test suite. Column deletion now requires 2-sprint deprecation period.",
+    "date": "2025-09-09"
+  },
+  {
+    "incident_id": "INC-0008",
+    "title": "Corporate VPN mass disconnection due to DPD misconfiguration",
+    "severity": "SEV2",
+    "domain": "networking",
+    "summary": "1,200 remote workers disconnected from VPN simultaneously during a 90-minute period when WAN latency spiked during a fiber maintenance window. DPD timers were too aggressive.",
+    "root_cause": "DPD timeout was set to 30 seconds with 5 retries. During the maintenance window, WAN latency reached 45-60ms. The DPD probes timed out before the latency normalized, causing the VPN gateway to declare peers dead and tear down tunnels.",
+    "remediation": "Increased DPD timeout to 120s and retries to 10. This was applied via rolling config push to the VPN gateway cluster. Reconnections completed within 20 minutes.",
+    "prevention": "DPD parameters now based on WAN SLA (2x the WAN SLA RTT). Added maintenance window suppression for DPD alerts. Created pre-maintenance checklist including VPN DPD review.",
+    "date": "2025-10-08"
+  },
+  {
+    "incident_id": "INC-0009",
+    "title": "MFA system outage locked out 400 users for 90 minutes",
+    "severity": "SEV1",
+    "domain": "identity",
+    "summary": "Okta MFA enforcement policy change was accidentally applied to all users including service accounts, causing 400 concurrent authentication failures and locking service accounts.",
+    "root_cause": "Policy change intended for 'External Contractors' group was applied to 'All Users' due to an error in the Okta admin UI dropdown. Service accounts don't have MFA enrolled, so all service account logins began failing simultaneously.",
+    "remediation": "Reverted policy to previous state via Okta admin. Unlocked 12 service accounts. Manual outreach to human users to re-establish sessions.",
+    "prevention": "Okta policy changes now require a second admin to confirm the target group before saving. Staging environment Okta tenant used for all policy testing first.",
+    "date": "2025-11-30"
+  },
+  {
+    "incident_id": "INC-0010",
+    "title": "JVM metaspace exhaustion caused service restarts in analytics cluster",
+    "severity": "SEV3",
+    "domain": "app_support",
+    "summary": "analytics-service restarted 14 times over 6 hours due to Metaspace exhaustion. The service uses dynamic class loading and had no MetaspaceSize limit configured.",
+    "root_cause": "The Groovy script execution engine in analytics-service generates new classes at runtime for each unique user script. With no Metaspace limit, the JVM grew indefinitely until the OS killed the process.",
+    "remediation": "Set `-XX:MaxMetaspaceSize=512m` and `-XX:MetaspaceSize=256m`. Added `-XX:+CMSClassUnloadingEnabled` to allow class unloading during GC. Restarts stopped immediately.",
+    "prevention": "JVM Metaspace limits added to all services using dynamic class loading. Metaspace usage metric added to APM dashboard with alert at 80% of limit.",
+    "date": "2025-06-28"
+  }
+]

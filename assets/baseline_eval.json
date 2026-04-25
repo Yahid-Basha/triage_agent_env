@@ -1,0 +1,456 @@
+{
+  "meta": {
+    "model": "Qwen/Qwen2.5-72B-Instruct",
+    "base_url": "https://router.huggingface.co/v1",
+    "eval_date": "2026-04-24",
+    "n_tickets": 20,
+    "n_submitted": 20,
+    "n_timeout": 0,
+    "mean_turns": 5.0,
+    "mean_rewards": {
+      "primary": 0.0,
+      "grounding": 0.183,
+      "efficiency": 0.17,
+      "calibration": 0.0002,
+      "format": 0.05,
+      "total": 0.4031
+    },
+    "by_difficulty": {
+      "easy": {
+        "n": 8,
+        "mean_total": 0.3879
+      },
+      "medium": {
+        "n": 8,
+        "mean_total": 0.4425
+      },
+      "hard": {
+        "n": 4,
+        "mean_total": 0.355
+      }
+    },
+    "partial": false
+  },
+  "results": [
+    {
+      "ticket_id": "EVAL-00001",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 3,
+      "llm_calls": 3,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.55
+      },
+      "total_reward": 0.55,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 1,
+      "n_fetches": 1
+    },
+    {
+      "ticket_id": "EVAL-00002",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 3,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.1333,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.4833
+      },
+      "total_reward": 0.4833,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 1
+    },
+    {
+      "ticket_id": "EVAL-00003",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 6,
+      "llm_calls": 4,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.0667,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.3167
+      },
+      "total_reward": 0.3167,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00004",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 6,
+      "llm_calls": 6,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.24,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.49
+      },
+      "total_reward": 0.49,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 3
+    },
+    {
+      "ticket_id": "EVAL-00005",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.15,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.4
+      },
+      "total_reward": 0.4,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00006",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.15,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.4
+      },
+      "total_reward": 0.4,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00007",
+      "difficulty": "hard",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.55
+      },
+      "total_reward": 0.55,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 1,
+      "n_fetches": 3
+    },
+    {
+      "ticket_id": "EVAL-00008",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.1333,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.3833
+      },
+      "total_reward": 0.3833,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00009",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.1333,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.3833
+      },
+      "total_reward": 0.3833,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00010",
+      "difficulty": "hard",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 4,
+      "llm_calls": 4,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.0,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.25
+      },
+      "total_reward": 0.25,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 1,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00011",
+      "difficulty": "medium",
+      "is_unanswerable": true,
+      "done_reason": "submitted",
+      "turns": 4,
+      "llm_calls": 4,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.55
+      },
+      "total_reward": 0.55,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 0
+    },
+    {
+      "ticket_id": "EVAL-00012",
+      "difficulty": "hard",
+      "is_unanswerable": true,
+      "done_reason": "submitted",
+      "turns": 6,
+      "llm_calls": 6,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.0,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.25
+      },
+      "total_reward": 0.25,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00013",
+      "difficulty": "medium",
+      "is_unanswerable": true,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.0,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.25
+      },
+      "total_reward": 0.25,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 1
+    },
+    {
+      "ticket_id": "EVAL-00014",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.1333,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.4833
+      },
+      "total_reward": 0.4833,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 1
+    },
+    {
+      "ticket_id": "EVAL-00015",
+      "difficulty": "easy",
+      "is_unanswerable": true,
+      "done_reason": "submitted",
+      "turns": 6,
+      "llm_calls": 6,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.0,
+        "efficiency": 0.0667,
+        "calibration": 0.003,
+        "format": 0.05,
+        "total": 0.1197
+      },
+      "total_reward": 0.1197,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 3,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00016",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.3,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.55
+      },
+      "total_reward": 0.55,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00017",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 4,
+      "llm_calls": 4,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.45
+      },
+      "total_reward": 0.45,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 1
+    },
+    {
+      "ticket_id": "EVAL-00018",
+      "difficulty": "easy",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 5,
+      "llm_calls": 5,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.1333,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.3833
+      },
+      "total_reward": 0.3833,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 2
+    },
+    {
+      "ticket_id": "EVAL-00019",
+      "difficulty": "medium",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 7,
+      "llm_calls": 7,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.2,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.45
+      },
+      "total_reward": 0.45,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 2,
+      "n_fetches": 4
+    },
+    {
+      "ticket_id": "EVAL-00020",
+      "difficulty": "hard",
+      "is_unanswerable": false,
+      "done_reason": "submitted",
+      "turns": 4,
+      "llm_calls": 4,
+      "rewards": {
+        "primary": 0.0,
+        "grounding": 0.12,
+        "efficiency": 0.2,
+        "calibration": 0.0,
+        "format": 0.05,
+        "total": 0.37
+      },
+      "total_reward": 0.37,
+      "submitted": true,
+      "submitted_escalate": false,
+      "n_searches": 1,
+      "n_fetches": 2
+    }
+  ]
+}

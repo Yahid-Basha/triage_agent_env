@@ -1,11 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""TriageAgent environment server components."""
 
-"""Rag Judge Env environment server components."""
+from .triage_environment import TriageAgentEnvironment
 
-from .rag_judge_env_environment import RagJudgeEnvEnvironment
-
-__all__ = ["RagJudgeEnvEnvironment"]
+__all__ = ["TriageAgentEnvironment"]

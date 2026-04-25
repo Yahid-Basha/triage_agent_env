@@ -1,7 +1,6 @@
 spec_version: 1
-name: rag_judge_env
+name: triage_agent_env
 type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-

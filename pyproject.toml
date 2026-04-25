@@ -9,37 +9,32 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openenv-rag_judge_env"
+name = "openenv-triage_agent_env"
 version = "0.1.0"
-description = "Rag Judge Env environment for OpenEnv"
+description = "TriageAgent environment for OpenEnv — enterprise IT ticket triage via multi-turn tool use"
 requires-python = ">=3.10"
 dependencies = [
-    # Core OpenEnv runtime (provides FastAPI server + HTTP client types)
-    # install from github
-    # "openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
     "openenv-core[core]>=0.2.2",
-    # Environment-specific dependencies
-    # Add all dependencies needed for your environment here
-    # Examples:
-    # "numpy>=1.19.0",
-    # "torch>=2.0.0",
-    # "gymnasium>=0.29.0",
-    # "openspiel>=1.0.0",
-    # "smolagents>=1.22.0,<2",
+    "numpy>=1.24",
+    "anthropic>=0.40",
+    "openai>=1.0",
+    "matplotlib>=3.7",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
+ml = [
+    "sentence-transformers>=2.2.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
 ]
 
 [project.scripts]
-# Server entry point - enables running via: uv run --project . server
-# or: python -m rag_judge_env.server.app
-server = "rag_judge_env.server.app:main"
+server = "triage_agent_env.server.app:main"
 
 [tool.setuptools]
 include-package-data = true
-packages = ["rag_judge_env", "rag_judge_env.server"]
-package-dir = { "rag_judge_env" = ".", "rag_judge_env.server" = "server" }
+packages = ["triage_agent_env", "triage_agent_env.server"]
+package-dir = { "triage_agent_env" = ".", "triage_agent_env.server" = "server" }

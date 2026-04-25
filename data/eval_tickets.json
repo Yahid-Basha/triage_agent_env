@@ -1,0 +1,246 @@
+[
+  {
+    "ticket_id": "EVAL-00001",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "OSPF neighbors flapping on core switch after hardware replacement",
+    "description": "Core switch SW-CORE-03 was replaced with a new unit last night. OSPF neighbors are cycling every few minutes. Old unit had MTU 9000 (jumbo frames). New unit has default MTU.",
+    "gold_cited_ids": [
+      "KB-00002"
+    ],
+    "gold_resolution": "MTU mismatch is the cause \u2014 old unit at 9000, new at 1500. Apply `ip ospf mtu-ignore` on all interconnected interfaces on the new switch, or set MTU to 9000: `system mtu jumbo 9000` on the new Cisco switch hardware. Adjacencies should restabilize within 40 seconds."
+  },
+  {
+    "ticket_id": "EVAL-00002",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "New joiner can't log into GitLab \u2014 account not created",
+    "description": "New engineer Priya Nair started today. Can access Okta dashboard, but GitLab shows 'Invalid login or password'. IT confirmed she is assigned to the GitLab Okta app.",
+    "gold_cited_ids": [
+      "KB-00009"
+    ],
+    "gold_resolution": "SCIM provisioning likely hasn't pushed her account yet. In Okta: Applications > GitLab > Assignments \u2014 find Priya Nair and click 'Force Sync'. This triggers a SCIM POST /Users to create her account. Check Okta System Log for the push result. If the push shows a 409 (user already exists with different email), investigate the GitLab user list for a conflicting account."
+  },
+  {
+    "ticket_id": "EVAL-00003",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "K8s pod for data-processor failing to start \u2014 missing config",
+    "description": "data-processor pod entered CrashLoopBackOff immediately after deployment. Logs are empty \u2014 pod crashes in under a second. This has never happened with this service before.",
+    "gold_cited_ids": [
+      "KB-00017"
+    ],
+    "gold_resolution": "Use `kubectl logs <pod> --previous` for prior-run logs. If empty, crash is sub-second \u2014 check `kubectl describe pod <pod>` Events section for 'CreateContainerConfigError' which indicates a missing Secret or ConfigMap. Run `kubectl get secret data-processor-config -n <namespace>` \u2014 if not found, the secret wasn't created in this namespace. Create it or contact the deploying team to pre-create the referenced secrets before the pod can start."
+  },
+  {
+    "ticket_id": "EVAL-00004",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "VPN flapping AND BGP not establishing to same remote site",
+    "description": "Remote site Pune: VPN tunnel flapping (IKE phase 1 succeeds, phase 2 fails) AND BGP session never establishes over the VPN. IT team at Pune says their equipment was just patched.",
+    "gold_cited_ids": [
+      "KB-00005",
+      "KB-00001"
+    ],
+    "gold_resolution": "Phase 2 failure (CHILD_SA): check traffic selectors in `show crypto ipsec sa` \u2014 Pune patch may have changed proxy-IDs. Verify PFS group matches. For BGP over VPN: BGP cannot establish until VPN is up and routing is correct. Once VPN phase 2 is fixed, check if BGP TCP/179 can traverse the tunnel: `telnet <peer-ip> 179 /source-ip <local-ip>`. Verify BGP timers and AS match. BGP over unstable VPN will keep getting reset \u2014 fix VPN first."
+  },
+  {
+    "ticket_id": "EVAL-00005",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "payment-service DB connections exhausted AND needs emergency rollback",
+    "description": "payment-service v4.1.0 deployed 45 mins ago. HikariCP showing connection pool at 100% utilization. DB team confirms long-running queries from this service. Need to rollback \u2014 but this version included a schema migration.",
+    "gold_cited_ids": [
+      "KB-00016",
+      "KB-00020"
+    ],
+    "gold_resolution": "Check if the migration has a down script. If yes: `helm rollback payment-service 0` and run the down migration via DBA. If no down script: evaluate whether the migration was purely additive (added columns/tables). If additive and new columns are empty, rollback is safe \u2014 DBA drops the new empty columns. Take thread dump before rollback to capture the long-running query. After rollback, file a hotfix ticket for the query optimization. Per KB-00016, add `leakDetectionThreshold` to prevent recurrence."
+  },
+  {
+    "ticket_id": "EVAL-00006",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "svc-analytics API token expired AND AD account locked \u2014 both blocking analytics pipeline",
+    "description": "Analytics pipeline failing since midnight. Two blockers: (1) API token for external data vendor returning 401 (token was 90 days old), (2) The AD service account svc-analytics is locked from 5 bad password attempts from an old Airflow config.",
+    "gold_cited_ids": [
+      "KB-00013",
+      "KB-00012"
+    ],
+    "gold_resolution": "Fix AD lockout first (blocks more services): `Unlock-ADAccount -Identity svc-analytics`. Check all Airflow connections for cached old password: Airflow UI > Admin > Connections. For the API token: follow the zero-downtime rotation pattern \u2014 generate new vendor token, update in Vault, update in the analytics platform config, verify old token is still functional, then revoke old token. Add token expiry monitoring at 75 days per KB-00013."
+  },
+  {
+    "ticket_id": "EVAL-00007",
+    "domain": "networking",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "After NOC failover drill, BGP, OSPF, and DHCP all showing anomalies",
+    "description": "Failover drill was conducted where NOC-CORE-01 was taken offline and NOC-CORE-02 activated. Now seeing: BGP session to ISP dropped and not recovering, OSPF routes flapping between 01 and 02, DHCP pool on management VLAN at 98%.",
+    "gold_cited_ids": [
+      "KB-00001",
+      "KB-00002",
+      "KB-00006"
+    ],
+    "gold_resolution": "All three issues stem from the failover. BGP: NOC-CORE-02 may have different BGP config \u2014 check hold timers and AS against ISP requirements. Verify ACL permits TCP/179 from 02's IP. OSPF flapping: check if both routers are advertising themselves as the same router-id (common failover mistake). OSPF requires unique router-IDs. Also verify area configs match between 01 and 02. DHCP: the failover may have caused devices to drop and re-request leases without releasing old ones. Clear stale bindings. Check if DHCP failover peer configuration is correctly set to NOC-CORE-02 \u2014 if 01's bindings weren't replicated, 02 doesn't know what's allocated."
+  },
+  {
+    "ticket_id": "EVAL-00008",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "Redis running out of memory \u2014 session keys with no TTL from new login feature",
+    "description": "Redis memory alert: 89% usage, rapidly climbing. New user login session feature was released 3 days ago. Each login creates a session:user:<id> key. There are now 1.3M such keys. None have TTL.",
+    "gold_cited_ids": [
+      "KB-00019"
+    ],
+    "gold_resolution": "Session keys without TTL are filling Redis. Immediate: `redis-cli CONFIG SET maxmemory-policy allkeys-lru` if not set. For the session keys: set TTL on all existing keys: `redis-cli --scan --pattern 'session:user:*' | xargs -L 100 -I{} redis-cli expire {} 86400`. In the application code, update the session creation to use SETEX with TTL=86400 (or appropriate session timeout). Add `spring.session.timeout=3600` if using Spring Session."
+  },
+  {
+    "ticket_id": "EVAL-00009",
+    "domain": "identity",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "svc-deploy-prod locked again \u2014 third time this month",
+    "description": "svc-deploy-prod is locked again (bad password count 6). Third time this month. Each time it happens we just unlock it. Something is still using the old password. Same scenario as TKT-100006.",
+    "gold_cited_ids": [
+      "TKT-100006"
+    ],
+    "gold_resolution": "Per TKT-100006 root cause, a consumer of this account still has the old password cached. Last time it was Kubernetes imagePullSecret in the prod namespace. Check all consumers systematically: Jenkins credentials, all K8s namespaces (`kubectl get secrets --all-namespaces | grep regcred`), Ansible vault entries, and any CI/CD config files. This is a recurrence \u2014 follow the full checklist from TKT-100006 and verify EVERY consumer is updated, not just the obvious ones. Consider converting to a gMSA (Group Managed Service Account) which auto-rotates without this problem."
+  },
+  {
+    "ticket_id": "EVAL-00010",
+    "domain": "app_support",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Three-service degradation: OOM crashes, connection pool exhaustion, and 504s \u2014 same deployment",
+    "description": "Deployment of platform v7.0.0 at 10:00 caused: (1) user-service OOMKilled every 30 min (heap dumps show large object), (2) order-service connection pool at 100%, (3) API gateway 504s on /api/v1/recommendations. All three services were updated in v7.0.0.",
+    "gold_cited_ids": [
+      "KB-00015",
+      "KB-00016",
+      "KB-00018"
+    ],
+    "gold_resolution": "Three services, one deployment. user-service OOM: analyze heap dump with Eclipse MAT \u2014 likely a new cache or collection introduced in v7.0.0. Increase heap temporarily and add `-XX:+HeapDumpOnOutOfMemoryError`. order-service pool: v7.0.0 may have introduced a query that holds connections \u2014 take thread dump to identify the holder. Add `leakDetectionThreshold=60000`. 504s on recommendations: check gateway logs for upstream_response_time \u2014 the recommendations endpoint may call user-service (which is OOM crashing) or order-service (pool exhausted), making the recommendation chain slow. Fix the root services first. Consider rolling back v7.0.0 while fixing."
+  },
+  {
+    "ticket_id": "EVAL-00011",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "Juniper SRX HA cluster split-brain after power interruption",
+    "description": "Juniper SRX5400 HA cluster entered split-brain state after a PDU power interruption. Both nodes think they are primary. No runbook for Juniper SRX HA recovery exists.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the network security team and open a Juniper TAC case. SRX5400 HA cluster split-brain recovery is not covered in any current KB. Collect: `show chassis cluster status`, `show chassis cluster interfaces`, and system logs from both nodes."
+  },
+  {
+    "ticket_id": "EVAL-00012",
+    "domain": "app_support",
+    "difficulty": "hard",
+    "is_unanswerable": true,
+    "title": "Distributed tracing showing cross-service timing anomaly \u2014 root cause unknown",
+    "description": "Jaeger distributed traces show a 400ms unexplained gap between service A calling service B. Both services are healthy. Gap appears only for calls from EU region. No runbook or past precedent.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the observability team and the platform SRE team. This cross-service timing anomaly in EU region is not covered by any current runbook. Collect: specific Jaeger trace IDs with the anomaly, region-specific routing configuration, and network latency measurements between EU pods."
+  },
+  {
+    "ticket_id": "EVAL-00013",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": true,
+    "title": "SCIM provisioning to a new internal custom-built app fails with custom error",
+    "description": "New internal app 'ProjectTracker' (custom-built by the product team) returns HTTP 422 on all Okta SCIM pushes. The app uses a non-standard SCIM attribute schema. No documentation exists.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the ProjectTracker development team. The non-standard SCIM schema returning 422 errors requires the application developer to fix their SCIM endpoint to handle standard Okta SCIM pushes, or to provide documentation of their custom schema so the Okta connector can be configured. This is not covered in any KB article."
+  },
+  {
+    "ticket_id": "EVAL-00014",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "SSL cert for dev-api.internal expired \u2014 developers blocked",
+    "description": "dev-api.internal TLS cert expired. All developers using this endpoint for local testing are getting SSL errors. Cert was self-managed (not in IT-PKI inventory). Need to renew.",
+    "gold_cited_ids": [
+      "KB-00014"
+    ],
+    "gold_resolution": "Submit a ServiceNow ticket to IT-PKI under 'Certificate > Internal PKI' with the FQDN dev-api.internal. Since developers are blocked but this is a non-production service, standard 2-day SLA applies (not P1). Generate CSR: `openssl req -new -newkey rsa:2048 -nodes -keyout dev-api.key -out dev-api.csr -subj '/CN=dev-api.internal'`. Include all relevant SANs. After cert arrival, install per the web server type. Add to certificate inventory after installation."
+  },
+  {
+    "ticket_id": "EVAL-00015",
+    "domain": "networking",
+    "difficulty": "easy",
+    "is_unanswerable": true,
+    "title": "Wi-Fi calling feature on employee phones causes DSCP marking conflicts with UC traffic",
+    "description": "After enabling Wi-Fi calling for corporate SIM employees, voice quality on Cisco UC (Jabber) calls degraded significantly. Both Wi-Fi calling and UC traffic are on the same SSID. DSCP conflict suspected. No runbook for this coexistence scenario.",
+    "gold_cited_ids": [],
+    "gold_resolution": "Escalate to the unified communications and wireless teams jointly. Wi-Fi calling and UC traffic DSCP coexistence is not covered in any current KB or runbook. This requires a wireless QoS policy review that accounts for both carrier Wi-Fi calling DSCP markings and corporate UC policies."
+  },
+  {
+    "ticket_id": "EVAL-00016",
+    "domain": "app_support",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "connection pool exhaustion on report-service \u2014 timing matches batch job",
+    "description": "report-service timing out on connection acquisition every night at 23:00 exactly. DBA reports long-running queries from report-service at that time. Pattern is new since last week. Looks like the month-end report job recently enabled for nightly runs.",
+    "gold_cited_ids": [
+      "KB-00016",
+      "TKT-100014"
+    ],
+    "gold_resolution": "This is the same root cause as TKT-100014. Nightly batch reports hold connections for the full query duration, exhausting the pool for other requests. From TKT-100014: (1) increase HikariCP `maximumPoolSize` to 20+, (2) Set `statement_timeout=600000` on report queries to prevent runaway holds, (3) Ideally create a separate connection pool for batch/reporting queries with its own size limit so they don't compete with OLTP requests."
+  },
+  {
+    "ticket_id": "EVAL-00017",
+    "domain": "identity",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "User stuck in SAML redirect loop on internal dashboard \u2014 third report this week",
+    "description": "Three separate users this week have reported a SAML redirect loop on dashboard.corp.example.com. All resolved by clearing cookies but it keeps happening. Need to find the permanent fix.",
+    "gold_cited_ids": [
+      "KB-00010",
+      "TKT-100008"
+    ],
+    "gold_resolution": "Per TKT-100008 root cause: the dashboard application has stale session cookies from the pre-SAML migration (named 'wikisession' or similar). The permanent fix is to invalidate the old cookie name at the application level \u2014 have the dev team update the session cookie configuration to use a new cookie name that old clients won't have cached, and set `SameSite=Strict` and an appropriate expiry. The short-term fix of clearing cookies is not sustainable at scale. SAML Tracer on one of the affected users will confirm the redirect loop is InResponseTo-based."
+  },
+  {
+    "ticket_id": "EVAL-00018",
+    "domain": "app_support",
+    "difficulty": "easy",
+    "is_unanswerable": false,
+    "title": "New pod deployment OOMKilled immediately \u2014 memory limit seems correct",
+    "description": "notification-worker v3.0 deploying to staging. Each pod gets OOMKilled within 90 seconds. Memory limit is set to 2GB. Developer says the app uses <500MB normally. First time seeing this.",
+    "gold_cited_ids": [
+      "KB-00017"
+    ],
+    "gold_resolution": "Take `kubectl logs <pod> --previous` to see the crash logs. Check Events in `kubectl describe pod` \u2014 if OOMKilled, the container exceeded the limit. If the app normally uses <500MB but is hitting 2GB at startup, check for a startup behavior: some applications load a large data file or pre-warm caches on startup that cause a temporary memory spike. Also verify with `kubectl top pod` if the limit is being hit during the first 90 seconds. Consider increasing the limit temporarily to 4GB to get the app running, then profile the startup memory usage to understand the spike."
+  },
+  {
+    "ticket_id": "EVAL-00019",
+    "domain": "networking",
+    "difficulty": "medium",
+    "is_unanswerable": false,
+    "title": "DNS resolution failing AND DHCP scope issue affecting same floor",
+    "description": "All users on floor 6 (VLAN 60) are experiencing two issues: can't resolve internal hostnames, AND 20% of their machines show APIPA addresses. Issues started after the VLAN 60 DHCP scope was relocated to a new server this morning.",
+    "gold_cited_ids": [
+      "KB-00003",
+      "KB-00006"
+    ],
+    "gold_resolution": "Both issues trace to the DHCP server relocation. APIPA (no IP): the new DHCP server may not have the VLAN 60 scope fully configured, or the DHCP helper-address on the VLAN 60 SVI still points to the old server. Check: `show running-config interface vlan 60 | include helper` \u2014 update helper-address to new server IP. DNS failure: DHCP option 6 (DNS server) on the new server likely isn't configured with 10.10.1.53. Update DHCP scope option 6 on the new server. After fixing, affected clients need to run `ipconfig /renew` or reconnect."
+  },
+  {
+    "ticket_id": "EVAL-00020",
+    "domain": "identity",
+    "difficulty": "hard",
+    "is_unanswerable": false,
+    "title": "Post-incident: SSO cert expired, service accounts locked, and SCIM broken \u2014 same root as known incident",
+    "description": "Following overnight maintenance, three issues discovered at 08:00: SAML SSO failing for all apps (cert-related error), 5 service accounts locked, SCIM push failing for HR system. Similar pattern to INC-0004 and INC-0009.",
+    "gold_cited_ids": [
+      "KB-00010",
+      "KB-00012",
+      "INC-0004"
+    ],
+    "gold_resolution": "Per INC-0004, Okta signing cert expiry causes SSO failures across all SPs simultaneously. Check Okta signing cert in Settings > Keys. If expired, generate new cert and update metadata at all 14+ SP integrations \u2014 use the list from the INC-0004 post-mortem. Service account lockouts per INC-0009 pattern: an Okta policy may have changed during maintenance. Check Okta System Log for policy changes and revert if too broad. Unlock accounts in AD. For SCIM: with a cert rotation, SCIM Bearer tokens may need regeneration \u2014 check Okta System Log for 401 errors in SCIM push events per KB-00012 for each affected HR system integration."
+  }
+]

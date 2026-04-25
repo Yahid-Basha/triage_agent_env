@@ -1,82 +1,60 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""TriageAgent Environment Client."""
 
-"""Rag Judge Env Environment Client."""
-
-from typing import Dict
+from typing import Dict, Optional
 
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import RagJudgeAction, RagJudgeObservation
+from .models import TriageAction, TriageObservation
 
 
-class RagJudgeEnv(
-    EnvClient[RagJudgeAction, RagJudgeObservation, State]
-):
+class TriageAgentEnvClient(EnvClient[TriageAction, TriageObservation, State]):
     """
-    Client for the Rag Judge Env Environment.
+    Client for the TriageAgent environment.
 
-    This client maintains a persistent WebSocket connection to the environment server,
-    enabling efficient multi-step interactions with lower latency.
-    Each client instance has its own dedicated environment session on the server.
+    Maintains a persistent WebSocket connection to the environment server.
+    Each client instance has its own dedicated environment session.
 
     Example:
-        >>> # Connect to a running server
-        >>> with RagJudgeEnv(base_url="http://localhost:8000") as client:
+        >>> with TriageAgentEnvClient(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
-        ...
-        ...     result = client.step(RagJudgeAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
-
-    Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = RagJudgeEnv.from_docker_image("rag_judge_env-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(RagJudgeAction(message="Test"))
-        ... finally:
-        ...     client.close()
+        ...     print(result.observation.ticket_title)
+        ...     action = TriageAction(tool_name="search_kb", query="password reset")
+        ...     result = client.step(action)
+        ...     print(result.observation.tool_result)
     """
 
-    def _step_payload(self, action: RagJudgeAction) -> Dict:
-        """
-        Convert RagJudgeAction to JSON payload for step message.
-
-        Args:
-            action: RagJudgeAction instance
-
-        Returns:
-            Dictionary representation suitable for JSON encoding
-        """
+    def _step_payload(self, action: TriageAction) -> Dict:
         return {
-            "message": action.message,
+            "tool_name": action.tool_name,
+            "query": action.query,
+            "status": action.status,
+            "max_results": action.max_results,
+            "ticket_id": action.ticket_id,
+            "article_id": action.article_id,
+            "incident_id": action.incident_id,
+            "resolution": action.resolution,
+            "cited_artifacts": action.cited_artifacts,
+            "confidence": action.confidence,
+            "escalate": action.escalate,
         }
 
-    def _parse_result(self, payload: Dict) -> StepResult[RagJudgeObservation]:
-        """
-        Parse server response into StepResult[RagJudgeObservation].
-
-        Args:
-            payload: JSON response data from server
-
-        Returns:
-            StepResult with RagJudgeObservation
-        """
+    def _parse_result(self, payload: Dict) -> StepResult[TriageObservation]:
         obs_data = payload.get("observation", {})
-        observation = RagJudgeObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
+        observation = TriageObservation(
+            ticket_id=obs_data.get("ticket_id", ""),
+            ticket_title=obs_data.get("ticket_title", ""),
+            ticket_description=obs_data.get("ticket_description", ""),
+            tool_name=obs_data.get("tool_name", ""),
+            tool_result=obs_data.get("tool_result", {}),
+            turn=obs_data.get("turn", 0),
+            max_turns=obs_data.get("max_turns", 20),
+            remaining_budget=obs_data.get("remaining_budget", 20),
             done=payload.get("done", False),
             reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
+            info=obs_data.get("info", {}),
         )
-
         return StepResult(
             observation=observation,
             reward=payload.get("reward"),
@@ -84,15 +62,6 @@ class RagJudgeEnv(
         )
 
     def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-
-        Args:
-            payload: JSON response from state request
-
-        Returns:
-            State object with episode_id and step_count
-        """
         return State(
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),

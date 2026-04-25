@@ -1,0 +1,284 @@
+[
+  {
+    "article_id": "KB-00001",
+    "title": "BGP Peer Session Down \u2014 Troubleshooting Guide",
+    "domain": "networking",
+    "tags": [
+      "bgp",
+      "routing",
+      "peer",
+      "ebgp",
+      "ibgp"
+    ],
+    "updated": "2025-09-12",
+    "body": "BGP peer sessions drop for three primary reasons: TCP connectivity loss, hold-timer expiry, or configuration mismatch.\n\n**Step 1 \u2014 Verify TCP reachability**\nPing the peer address from the router VRF: `ping vrf MGMT <peer-ip> source <local-ip>`. If ping fails, check ACLs on both ends blocking TCP/179.\n\n**Step 2 \u2014 Check BGP state**\n`show bgp neighbors <peer-ip>` \u2014 look for 'BGP state = Active' (can't connect) vs 'Idle (Admin)' (locally shut). Check 'Hold time' and 'Keepalive interval'.\n\n**Step 3 \u2014 Validate AS and peer config**\nConfirm `neighbor <ip> remote-as <AS>` matches the peer's local AS. MD5 password mismatch causes 'BGP notification: hold time expired' logs.\n\n**Step 4 \u2014 Review logs**\n`debug ip bgp <peer-ip> events` for Cisco IOS. Look for NOTIFICATION messages indicating cease/hold-timer/open-message-error subtypes.\n\n**Resolution**\nMost common fix: correct hold-timer mismatch with `neighbor <ip> timers <keepalive> <hold>` or clear ACL blocking TCP 179. After fixing, `clear ip bgp <peer-ip> soft` to re-establish without dropping the session hard.\n\n**Escalation threshold:** If session stays in Active for >5 min after TCP fix, escalate to NOC-L2 with `show bgp summary` and `show ip interface brief` output."
+  },
+  {
+    "article_id": "KB-00002",
+    "title": "OSPF Neighbor Adjacency Failure Investigation",
+    "domain": "networking",
+    "tags": [
+      "ospf",
+      "routing",
+      "adjacency",
+      "lsa",
+      "area"
+    ],
+    "updated": "2025-11-03",
+    "body": "OSPF adjacencies fail at specific state transitions. The most common stuck states are INIT (hello seen but not bidirectional), 2-WAY, and EXSTART/EXCHANGE.\n\n**Step 1 \u2014 Identify stuck state**\n`show ip ospf neighbor` \u2014 if stuck in INIT, the remote router is not receiving your hellos or not including your router-id in its hello. Check subnet mask and hello/dead intervals match.\n\n**Step 2 \u2014 MTU mismatch (most common EXSTART cause)**\nOSPF DBD packets use full MTU. If interface MTU differs between peers, EXSTART gets stuck. Fix: `ip ospf mtu-ignore` on both interfaces, or align MTUs.\n\n**Step 3 \u2014 Area-type mismatch**\nStub vs non-stub area mismatch prevents adjacency. Check `show ip ospf` for area flags.\n\n**Step 4 \u2014 Authentication**\nMD5 key mismatch silently drops hellos. Use `debug ip ospf adj` and look for 'Invalid authentication' messages.\n\n**Resolution**\nFor MTU: align physical MTU or add `ip ospf mtu-ignore`. For area mismatch: ensure both routers agree on stub/nssa flags in `area <id> stub` config. After fix, `clear ip ospf process` is destructive \u2014 prefer fixing config and waiting for dead-timer expiry (default 40s).\n\n**Related:** KB-00001 (BGP) for comparison on hold-timer behavior."
+  },
+  {
+    "article_id": "KB-00003",
+    "title": "Corporate DNS Resolution Failures \u2014 Diagnosis and Fix",
+    "domain": "networking",
+    "tags": [
+      "dns",
+      "resolution",
+      "nslookup",
+      "bind",
+      "forwarder"
+    ],
+    "updated": "2025-10-22",
+    "body": "DNS resolution failures manifest as application connection errors, not network errors. Always confirm DNS is the issue before escalating network.\n\n**Step 1 \u2014 Isolate DNS vs network**\n`nslookup <hostname> <dns-server-ip>` directly targeting the corp DNS. If this succeeds but the application fails, the client is using the wrong DNS server. If nslookup fails: proceed.\n\n**Step 2 \u2014 Check forwarder chain**\nCorp DNS servers (10.10.1.53, 10.10.2.53) forward to ISP resolvers for external names. If external resolution fails but internal succeeds, check forwarder connectivity: `dig @10.10.1.53 google.com +time=2`. Timeout means forwarder blocked.\n\n**Step 3 \u2014 Zone delegation issues**\nInternal zones (corp.example.com, svc.example.com) are authoritative on 10.10.1.53. NXDOMAIN for internal names means either the record is missing or split-DNS routing is sending the query to external resolvers. Check client DNS server assignment.\n\n**Step 4 \u2014 Flush and retry**\nWindows: `ipconfig /flushdns`. Linux: `systemd-resolve --flush-caches` or restart `systemd-resolved`. Negative cache TTL is 300s by default.\n\n**Resolution**\nMost common: client has 8.8.8.8 as DNS (DHCP misconfiguration) and can't resolve internal names. Fix: push correct DNS via DHCP option 6, or manually set to 10.10.1.53."
+  },
+  {
+    "article_id": "KB-00004",
+    "title": "F5 LTM Health Monitor Failures \u2014 Configuration Guide",
+    "domain": "networking",
+    "tags": [
+      "f5",
+      "load-balancer",
+      "health-monitor",
+      "pool",
+      "virtual-server"
+    ],
+    "updated": "2025-08-14",
+    "body": "F5 LTM marks pool members red when health monitors fail. This causes 502/503 errors upstream. Members show as 'down' in the GUI: Local Traffic > Pools > Pool List.\n\n**Step 1 \u2014 Check monitor type vs service**\nHTTP monitors send GET / HTTP/1.1 and expect a specific response. If the backend requires Host header or returns 301 to HTTPS, the HTTP monitor will fail. Use HTTPS monitor with `send: HEAD /health HTTP/1.1\\r\\nHost: myapp.corp.example.com\\r\\n\\r\\n`.\n\n**Step 2 \u2014 Verify receive string**\nThe monitor's `recv` string must appear in the response body. If backend changed the health check response text, update `recv: 'OK'` accordingly.\n\n**Step 3 \u2014 Connectivity from F5 self-IP**\nF5 sends health checks from its self-IP (not VIP). Firewalls may block this. Test: from F5 bash, `curl -H 'Host: myapp.corp.example.com' http://<member-ip>:<port>/health`.\n\n**Step 4 \u2014 Force-up for emergency**\niControl REST: `PATCH /mgmt/tm/ltm/pool/~Common~mypool/members/~Common~<ip>:<port>` with `{\"session\": \"user-enabled\", \"state\": \"user-up\"}`. Document and create incident ticket \u2014 this bypasses health checking.\n\n**Resolution**\nFix monitor send/recv strings, or add firewall rule permitting self-IP health checks. Prefer fixing root cause over force-up."
+  },
+  {
+    "article_id": "KB-00005",
+    "title": "VPN Tunnel Flapping \u2014 IPSec IKEv2 Troubleshooting",
+    "domain": "networking",
+    "tags": [
+      "vpn",
+      "ipsec",
+      "ikev2",
+      "tunnel",
+      "flapping"
+    ],
+    "updated": "2025-12-01",
+    "body": "VPN tunnels that come up and immediately drop (flapping) are almost always caused by Phase 1 (IKE) or Phase 2 (IPSec) parameter mismatch, or DPD misconfiguration.\n\n**Step 1 \u2014 Capture the NOTIFY payload**\n`debug crypto ikev2` on Cisco or check VPN gateway logs. Look for NOTIFY messages: NO_PROPOSAL_CHOSEN means algorithm mismatch. TS_UNACCEPTABLE means traffic selector mismatch.\n\n**Step 2 \u2014 Algorithm comparison**\nVerify both ends use identical IKE proposal: encryption (AES-256), PRF (SHA-256), DH group (14 or 19), lifetime (86400s). Even one mismatch causes immediate teardown.\n\n**Step 3 \u2014 Dead Peer Detection (DPD)**\nAggressive DPD timers cause tunnels to drop under high latency. Default: `dpd 30 retry 5`. If WAN latency spikes >20s, increase to `dpd 60 retry 5`.\n\n**Step 4 \u2014 NAT-T**\nIf one end is behind NAT, NAT-T must be enabled on both sides (UDP 4500). Check: `show crypto ikev2 sa` \u2014 if NAT-T flag is missing on one side, tunnel fails Phase 1.\n\n**Resolution**\nAlign IKE proposal on both ends. If DPD: increase timers. If NAT-T: enable `crypto ikev2 nat-keepalive 30` on both sides."
+  },
+  {
+    "article_id": "KB-00006",
+    "title": "DHCP Scope Exhaustion \u2014 Emergency Recovery",
+    "domain": "networking",
+    "tags": [
+      "dhcp",
+      "ip-address",
+      "scope",
+      "lease",
+      "exhaustion"
+    ],
+    "updated": "2025-07-28",
+    "body": "DHCP scope exhaustion prevents new devices from getting IP addresses. Clients fall back to APIPA (169.254.x.x) and cannot communicate.\n\n**Immediate mitigation (< 5 min)**\n1. `show ip dhcp pool` to confirm utilization. If >95%, proceed.\n2. `clear ip dhcp binding *` \u2014 WARNING: this forces all clients to renew.    Do only in maintenance window or if stale leases are the cause.\n3. Alternative: `clear ip dhcp binding <specific-ip>` for targeted stale entries.\n\n**Identify stale leases**\n`show ip dhcp binding | include Expiry` \u2014 entries with expiry >7 days in the future are likely stale (device removed but lease not expired). Cross-reference with ARP table: `show ip arp | include <subnet>`. Entries with 'Incomplete' are orphaned.\n\n**Permanent fix options**\nA) Reduce lease time from 8d to 1d: `ip dhcp pool CORP_WIFI / lease 1`\nB) Expand scope: if /24 is full, supernet to /23 or add a new secondary pool\nC) Enable DHCP snooping to prevent rogue DHCP servers consuming addresses\n\n**Prevention**\nAlert at 80% utilization. SNMP OID: 1.3.6.1.4.1.9.9.243.1.3.1.10 for Cisco DHCP pool usage."
+  },
+  {
+    "article_id": "KB-00007",
+    "title": "Interface CRC Error Investigation and Remediation",
+    "domain": "networking",
+    "tags": [
+      "crc",
+      "interface",
+      "errors",
+      "duplex",
+      "cabling"
+    ],
+    "updated": "2025-10-05",
+    "body": "CRC errors indicate data corruption at layer 1/2. High CRC rates cause retransmissions, TCP slowdown, and packet loss even when interface shows 'up/up'.\n\n**Severity thresholds**\n< 0.01% of input packets: acceptable. 0.01\u20131%: investigate. >1%: urgent remediation.\n\n**Step 1 \u2014 Baseline counters**\n`show interface <int> | include CRC|input|output` \u2014 note the count and timestamp. Wait 5 min, recheck. Divide delta CRCs by delta input packets for rate.\n\n**Step 2 \u2014 Check duplex mismatch (most common cause)**\n`show interface <int> | include duplex` \u2014 if one side is full-duplex and the other is half or auto, CRCs accumulate on the full-duplex side. Fix: hard-set speed and duplex on both ends: `speed 1000 / duplex full`.\n\n**Step 3 \u2014 Physical layer check**\nFor SFP: `show interfaces <int> transceiver detail` \u2014 Rx power below -20 dBm is marginal. Reseat SFP. For copper: check cable length (Cat5e max 100m at 1G).\n\n**Step 4 \u2014 VLAN/trunk config**\nNative VLAN mismatch on trunks causes FCS errors, not CRC, but presents similarly. `show interfaces trunk` to verify.\n\n**Resolution**\nFix duplex mismatch first (covers 70% of cases). If still elevated after duplex fix, replace cable or SFP. Escalate to hardware team if physical replacement needed."
+  },
+  {
+    "article_id": "KB-00008",
+    "title": "Active Directory Authentication Failures \u2014 Troubleshooting",
+    "domain": "identity",
+    "tags": [
+      "active-directory",
+      "ldap",
+      "kerberos",
+      "authentication",
+      "ad"
+    ],
+    "updated": "2025-09-30",
+    "body": "AD authentication failures present as 'Invalid credentials' or 'Account locked' errors. The Windows Event Log is the primary diagnostic tool.\n\n**Step 1 \u2014 Check lockout status**\n`Get-ADUser <username> -Properties LockedOut,BadLogonCount,LastBadPasswordAttempt` in PowerShell. If LockedOut=True, unlock: `Unlock-ADAccount -Identity <username>`.\n\n**Step 2 \u2014 Find lockout source**\nEvent ID 4740 on the PDC Emulator shows the source computer locking the account. Use Microsoft's free Account Lockout Status (LockoutStatus.exe) tool. Common source: mapped drives or services using cached old password.\n\n**Step 3 \u2014 Password expiry**\n`(Get-ADUser <username> -Properties PasswordExpired).PasswordExpired` \u2014 if True, user must reset. Admins cannot see the password; reset via `Set-ADAccountPassword`.\n\n**Step 4 \u2014 Kerberos ticket issues**\nEvent ID 4771 (pre-auth failed) with error code 0x18 = wrong password. 0x12 = account disabled. 0x25 = clock skew >5 min (Kerberos tolerance). Fix clock skew: `w32tm /resync /force` on the affected machine.\n\n**Step 5 \u2014 LDAP bind test**\n`ldp.exe` (Windows) or `ldapsearch -H ldap://corp-dc1.corp.example.com -D 'user@corp.example.com' -W -b 'DC=corp,DC=example,DC=com' '(sAMAccountName=<username>)'` to test bind directly.\n\n**Resolution**\nUnlock account, fix password, sync clock. If recurring lockouts, identify source via LockoutStatus."
+  },
+  {
+    "article_id": "KB-00009",
+    "title": "Okta SCIM 2.0 Provisioning Setup and Troubleshooting",
+    "domain": "identity",
+    "tags": [
+      "okta",
+      "scim",
+      "provisioning",
+      "idp",
+      "sso"
+    ],
+    "updated": "2025-11-15",
+    "body": "SCIM 2.0 provisioning syncs user lifecycle (create/update/deactivate) from Okta to downstream applications. Misconfiguration causes silent provisioning failures.\n\n**Setup (new integration)**\n1. In Okta Admin: Applications > App > Provisioning tab > Enable SCIM provisioning.\n2. SCIM connector base URL: `https://<your-app>/scim/v2/`\n3. Auth: select HTTP Header. Generate a Bearer token in the target app and paste it.\n4. Test connector: Okta sends a GET /scim/v2/Users request. Status 200 = working.\n5. Enable: Push New Users, Push Profile Updates, Push Groups, Deactivate Users.\n\n**Attribute mapping (critical)**\nRequired SCIM attributes: `userName` (maps to email), `name.givenName`, `name.familyName`. Optional but common: `phoneNumbers[0].value`, `title`, `department`.\n\n**Common failures**\n- 401: Bearer token expired or wrong. Regenerate in the target app.\n- 404 on /scim/v2/Users: SCIM endpoint not enabled in target app config.\n- User created in app but profile not updated: Push Profile Updates not enabled.\n- User not deactivated: Deactivate Users toggle must be ON; some apps use `active: false`.\n\n**Debugging**\nOkta System Log: filter by `event_type eq \"application.provision.user.push\"`. Error messages include the SCIM response body from the downstream app.\n\n**Resolution**\nRegenerate Bearer token if 401. Enable SCIM in target app if 404. Check attribute mapping for profile-sync issues."
+  },
+  {
+    "article_id": "KB-00010",
+    "title": "SAML 2.0 SSO Configuration \u2014 IdP and SP Setup",
+    "domain": "identity",
+    "tags": [
+      "saml",
+      "sso",
+      "idp",
+      "sp",
+      "federation"
+    ],
+    "updated": "2025-08-22",
+    "body": "SAML 2.0 SSO errors are cryptic. The two most common failures are clock skew and assertion attribute mismatch.\n\n**Core configuration checklist**\nIdP (Okta/ADFS) side:\n- SP Entity ID (Audience): must exactly match what the SP expects. Case-sensitive.\n- ACS URL: the SP's assertion consumer service URL. Usually `/saml/acs` or `/sso/saml`.\n- NameID format: `emailAddress` is most common. Some SPs require `unspecified`.\nSP side:\n- IdP SSO URL: copy exactly from IdP metadata XML.\n- IdP Signing Certificate: download X.509 cert from IdP metadata. Renew annually.\n\n**Troubleshooting with SAML Tracer (Chrome extension)**\n1. Install SAML Tracer, start recording.\n2. Attempt SSO login.\n3. Look for the POST to the ACS URL. Decode the SAMLResponse Base64 payload.\n4. Check `<Conditions NotBefore NotOnOrAfter>` \u2014 if expired, clock skew is the cause.\n\n**Common errors**\n- 'Audiences does not match': Entity ID mismatch between IdP and SP.\n- 'InResponseTo mismatch': SP reused an old AuthnRequest ID. Clear SP session.\n- 'Signature verification failed': IdP certificate changed, update SP trust.\n\n**Resolution**\nFix Entity ID case mismatch, sync NTP (skew tolerance is 300s), update signing cert."
+  },
+  {
+    "article_id": "KB-00011",
+    "title": "MFA Reset and Account Unlock Procedure",
+    "domain": "identity",
+    "tags": [
+      "mfa",
+      "totp",
+      "reset",
+      "locked",
+      "authenticator"
+    ],
+    "updated": "2025-10-18",
+    "body": "Users locked out of MFA cannot self-service. This procedure is for IT admins only. Always verify user identity via video call or badge scan before resetting MFA.\n\n**Okta MFA reset**\n1. Okta Admin Console > Directory > People > Search user.\n2. Click user > More Actions > Reset Multifactor.\n3. Confirm reset. User receives an activation email and must re-enroll.\n4. Do NOT reset if the user has active sessions that could be hijacked.    Check 'Current Sessions' and terminate all before reset.\n\n**Google Workspace MFA reset**\n`gam update user <email> is2svEnrolled false` \u2014 then notify user to re-enroll at myaccount.google.com/signinoptions/two-step-verification.\n\n**Azure AD / Entra MFA reset**\nAzure Portal > Users > Select user > Authentication methods > Require re-register MFA.\nOr via PowerShell: `Set-MgUserAuthenticationRequirement -UserId <objectId> -PerUserMfaState Disabled`\n\n**Backup verification codes**\nIf the user has backup codes stored securely, they can self-recover. Ask before resetting \u2014 avoids the re-enrollment friction.\n\n**After reset**\nLog the reset in the IT ticket system with: user name, time, admin who performed reset, verification method used. Required for compliance audit."
+  },
+  {
+    "article_id": "KB-00012",
+    "title": "Service Account Password Rotation Procedure",
+    "domain": "identity",
+    "tags": [
+      "service-account",
+      "password",
+      "rotation",
+      "ad",
+      "automation"
+    ],
+    "updated": "2025-12-10",
+    "body": "Service account passwords must be rotated every 90 days per security policy. Uncoordinated rotation breaks dependent services. Follow this procedure.\n\n**Step 1 \u2014 Impact assessment**\nBefore rotating, identify all dependencies:\n`Get-ADUser <svc-account> -Properties ServicePrincipalNames,Description` \u2014 check Description for a list of dependent services. Also search config files: `grep -r '<service-account-name>' /etc/`\n\n**Step 2 \u2014 Update in PAM vault first**\nUpdate the new password in CyberArk / HashiCorp Vault BEFORE changing in AD. This ensures downstream services can retrieve it atomically.\n\n**Step 3 \u2014 Rotate in AD**\n`Set-ADAccountPassword -Identity <svc-account> -NewPassword (ConvertTo-SecureString '<new-password>' -AsPlainText -Force) -Reset`\n\n**Step 4 \u2014 Update dependent services (in order)**\n1. Windows services: `sc config <service> password= <new-password>` then restart service.\n2. IIS Application Pools: IIS Manager > App Pools > Advanced Settings > Identity.\n3. Scheduled tasks: Task Scheduler > Properties > General > Change User.\n4. JDBC/connection strings: update config files, restart application.\n\n**Step 5 \u2014 Verify**\nWatch service logs for authentication errors for 15 min after rotation. If any service fails, roll back to old password immediately, then re-coordinate.\n\n**For gMSA (Group Managed Service Accounts):** rotation is automatic every 30 days. No manual rotation needed. Prefer gMSA over traditional service accounts."
+  },
+  {
+    "article_id": "KB-00013",
+    "title": "API Token Rotation and Revocation",
+    "domain": "identity",
+    "tags": [
+      "api-token",
+      "rotation",
+      "revocation",
+      "credentials",
+      "security"
+    ],
+    "updated": "2025-09-05",
+    "body": "API tokens compromised or expired must be revoked and rotated with zero downtime. This requires a brief window where both old and new tokens are valid.\n\n**Zero-downtime rotation pattern**\n1. Generate NEW token while OLD token is still valid.\n2. Update all consumers of the token (one by one or via rolling deployment).\n3. Verify all consumers are using the new token (check access logs).\n4. Revoke the OLD token.\n\n**GitHub Personal Access Tokens (PATs)**\nSettings > Developer Settings > Personal access tokens > Fine-grained tokens. Set expiry to 90 days max per policy. Rotation reminders should be set at -14 days.\n\n**Jenkins API Tokens**\nUser > Configure > API Token > Add new token. Update Jenkinsfile credentials binding before removing old token from the user account.\n\n**Generic REST API tokens**\nMost platforms: POST /api/v1/tokens to create, DELETE /api/v1/tokens/{id} to revoke. Store tokens in Vault: `vault kv put secret/svc/<service>/api-token value=<token>`.\n\n**Emergency revocation (token compromised)**\nRevoke first, update consumers second. Accept a brief outage rather than a prolonged security exposure. File a P1 incident and involve the security team.\n\n**Audit**\nAfter rotation, verify old token returns 401 from an external test: `curl -H 'Authorization: Bearer <old-token>' https://api.example.com/health`"
+  },
+  {
+    "article_id": "KB-00014",
+    "title": "TLS Certificate Renewal for Internal Services",
+    "domain": "identity",
+    "tags": [
+      "tls",
+      "ssl",
+      "certificate",
+      "renewal",
+      "expiry",
+      "pki"
+    ],
+    "updated": "2025-11-28",
+    "body": "Expired TLS certificates cause hard failures in strict clients (curl, browsers with HSTS). Internal services use the corp CA. Renewal must happen \u226514 days before expiry.\n\n**Check expiry**\n`openssl s_client -connect <host>:<port> -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -dates`\nOr: `echo | openssl s_client -connect <host>:443 2>/dev/null | openssl x509 -noout -checkend 1209600` \u2014 returns non-zero if expiring within 14 days.\n\n**Request renewal from internal CA**\n1. Generate CSR: `openssl req -new -newkey rsa:2048 -nodes -keyout <service>.key    -out <service>.csr -subj '/CN=<fqdn>/O=Corp/C=US'`\n2. Add SANs: create config file with `subjectAltName = DNS:<fqdn>,DNS:<alias>,IP:<ip>`\n3. Submit CSR to IT-PKI team via ServiceNow ticket category 'Certificate > Internal PKI'.\n4. SLA: 2 business days for standard, 4 hours for P1 (expired cert causing outage).\n\n**Install renewed certificate**\nNginx: update `ssl_certificate` and `ssl_certificate_key` paths, `nginx -t && nginx -s reload`\nApache: update `SSLCertificateFile`, `apachectl configtest && apachectl graceful`\nJava keystore: `keytool -importcert -alias <alias> -file <cert.pem> -keystore <keystore.jks>`\n\n**Verify**\n`curl -v https://<host>` \u2014 check 'expire date' in TLS handshake output."
+  },
+  {
+    "article_id": "KB-00015",
+    "title": "JVM Out of Memory Error \u2014 Heap Dump Analysis",
+    "domain": "app_support",
+    "tags": [
+      "jvm",
+      "oom",
+      "heap",
+      "memory",
+      "spring-boot"
+    ],
+    "updated": "2025-10-12",
+    "body": "JVM OOM crashes are either heap exhaustion (java.lang.OutOfMemoryError: Java heap space) or metaspace exhaustion (java.lang.OutOfMemoryError: Metaspace). Heap dumps are mandatory for root cause analysis.\n\n**Enable automatic heap dump on OOM**\nAdd JVM flags: `-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/heapdumps/`\nAlso add: `-XX:+ExitOnOutOfMemoryError` to force a clean restart (avoids zombie state).\n\n**Capture heap dump on running process**\n`jmap -dump:format=b,file=/tmp/heap_$(date +%s).hprof <pid>`\nNote: jmap freezes the JVM for the duration. Prefer OOM trigger for production.\n\n**Analyze with Eclipse MAT**\n1. Open heap dump: File > Open Heap Dump.\n2. Run 'Leak Suspects' report.\n3. Look for the 'Problem Suspect' with the largest retained heap.\n4. Drill into the dominator tree \u2014 large byte[] or char[] arrays usually indicate    String interning or cache bloat.\n\n**Common causes**\n- Unbounded cache: Guava Cache or Caffeine without `maximumSize` configured.\n- Session object bloat: HttpSession storing large objects without TTL.\n- Memory leak in third-party library: check version changelogs.\n\n**Quick mitigation**\nIncrease heap: `-Xmx4g` (from default 1-2g). This buys time for root cause analysis but does not fix the underlying leak."
+  },
+  {
+    "article_id": "KB-00016",
+    "title": "Database Connection Pool Exhaustion \u2014 Diagnosis and Recovery",
+    "domain": "app_support",
+    "tags": [
+      "database",
+      "connection-pool",
+      "hikari",
+      "timeout",
+      "jdbc"
+    ],
+    "updated": "2025-08-30",
+    "body": "Connection pool exhaustion manifests as `HikariPool-1 - Connection is not available, request timed out after 30000ms` in application logs. Services become degraded but the database itself may be healthy.\n\n**Step 1 \u2014 Confirm pool exhaustion**\nCheck Prometheus/Grafana metric `hikaricp_connections_active`. If it equals `hikaricp_connections_max`, the pool is saturated. Also check `hikaricp_connections_pending`.\n\n**Step 2 \u2014 Find connection holders**\nIn the application thread dump: `kill -3 <pid>` (Linux). Search for threads in `RUNNABLE` or `WAITING` state with JDBC/database stack frames. Long-running queries or unclosed ResultSets are common causes.\n\n**Step 3 \u2014 Check database side**\n`SELECT count(*), state FROM pg_stat_activity GROUP BY state;` (PostgreSQL) or `SHOW PROCESSLIST;` (MySQL). High 'idle' connection count = pool is holding connections not in use. High 'active' = queries running long.\n\n**Immediate recovery**\nRestart the application service to flush the pool. Monitor that connections return to normal levels (< 50% of max pool size) after restart.\n\n**Permanent fix**\n1. HikariCP config: `maximumPoolSize=20` (increase if needed), `connectionTimeout=30000`,    `idleTimeout=600000`, `maxLifetime=1800000`, `leakDetectionThreshold=60000`.\n2. Ensure all JDBC code uses try-with-resources to close connections.\n3. Set query timeout: `spring.datasource.hikari.initializationFailTimeout=1`.\n**Related:** INC-0003 covers the March payment service outage caused by this issue."
+  },
+  {
+    "article_id": "KB-00017",
+    "title": "Kubernetes Pod CrashLoopBackOff \u2014 Root Cause Diagnosis",
+    "domain": "app_support",
+    "tags": [
+      "kubernetes",
+      "k8s",
+      "crashloop",
+      "pod",
+      "container"
+    ],
+    "updated": "2025-09-20",
+    "body": "CrashLoopBackOff means the container started, exited non-zero, and Kubernetes is retrying with exponential backoff (10s, 20s, 40s, ... max 5m).\n\n**Step 1 \u2014 Get the last crash logs**\n`kubectl logs <pod> --previous` \u2014 this shows the logs from the PREVIOUS container run, not the current (which may be in backoff). Critical: the current run logs are often empty if the container crashes in <1s.\n\n**Step 2 \u2014 Check events**\n`kubectl describe pod <pod>` \u2014 look at Events section. Common messages: 'OOMKilled' (memory limit hit), 'Error' (non-zero exit), 'CreateContainerConfigError' (bad env var or secret reference).\n\n**Step 3 \u2014 Common root causes**\n- **OOMKilled**: `resources.limits.memory` too low. Increase or fix memory leak.\n- **Missing secret**: `kubectl get secret <name>` \u2014 if not found, the secret doesn't exist   in that namespace.\n- **Config error**: bad YAML injected via ConfigMap. Check `kubectl get cm <name> -o yaml`.\n- **Liveness probe too aggressive**: if probe fails before app is ready, Kubernetes kills it.   Increase `initialDelaySeconds` to give app time to start.\n\n**Step 4 \u2014 Debug mode**\nTemporarily set `command: ['sh', '-c', 'sleep 3600']` in the container spec to keep it alive without the app. Then `kubectl exec -it <pod> -- sh` to inspect the environment.\n\n**Resolution**\nFix root cause per above. Remove debug command. Verify logs show healthy startup."
+  },
+  {
+    "article_id": "KB-00018",
+    "title": "API Gateway 504 Timeout Troubleshooting",
+    "domain": "app_support",
+    "tags": [
+      "api-gateway",
+      "504",
+      "timeout",
+      "latency",
+      "kong",
+      "nginx"
+    ],
+    "updated": "2025-10-30",
+    "body": "504 Gateway Timeout means the upstream service did not respond within the gateway's configured timeout. This is distinct from 502 (upstream returned an error) or 503 (upstream unreachable).\n\n**Step 1 \u2014 Identify the slow upstream**\nAPI gateway access logs include `upstream_response_time` (Kong/Nginx). Filter for 504s: `grep 504 /var/log/kong/access.log | awk '{print $7, $9}' | sort -n`.\n\n**Step 2 \u2014 Test upstream directly**\nBypass the gateway and hit the upstream service: `curl -w '%{time_total}' -o /dev/null http://<upstream-host>:<port>/endpoint`. If this also times out, the issue is in the upstream service, not the gateway.\n\n**Step 3 \u2014 Common upstream causes**\n- DB query regression: explain plan on slow queries, check for missing index.\n- Downstream dependency slow: the upstream service is waiting on its own dependency.\n- Thread pool exhaustion: service is handling requests but has no threads for new work.\n\n**Step 4 \u2014 Adjust timeout configuration**\nKong: `proxy_read_timeout 60000` (in milliseconds) per route. Nginx: `proxy_read_timeout 60s` in location block. Note: increasing timeouts masks the real problem. Investigate before increasing.\n\n**Step 5 \u2014 Circuit breaker**\nIf upstream is intermittently slow, configure circuit breaker in Kong (circuit-breaker plugin) to fail-fast and return 503 instead of hanging until timeout.\n\n**Resolution**\nFix slow queries, add timeouts in upstream service to its own dependencies, or increase pool size. Only increase gateway timeout as a last resort."
+  },
+  {
+    "article_id": "KB-00019",
+    "title": "Redis Cache Eviction and Key Expiry Issues",
+    "domain": "app_support",
+    "tags": [
+      "redis",
+      "cache",
+      "eviction",
+      "ttl",
+      "memory"
+    ],
+    "updated": "2025-07-14",
+    "body": "Redis eviction or unexpected key expiry causes cache misses to spike, increasing database load and response latency.\n\n**Check eviction policy**\n`redis-cli CONFIG GET maxmemory-policy` \u2014 default is `noeviction` (Redis returns OOM error) or `allkeys-lru` (evicts least-recently-used). For a cache use case, `allkeys-lru` is correct.\n\n**Check memory pressure**\n`redis-cli INFO memory` \u2014 compare `used_memory_rss` to `maxmemory`. If >90%, eviction is active. `redis-cli INFO stats | grep evicted_keys` shows total evicted.\n\n**Find keys without TTL**\n`redis-cli --scan --pattern '*' | xargs -L 1 redis-cli ttl | grep -c '^-1'` \u2014 prints count of keys with no expiry. These fill memory indefinitely.\n\n**Common misconfiguration: no TTL on session keys**\nSpring Session with Redis stores sessions forever by default unless `spring.session.timeout` is set. Add `spring.session.redis.cleanup-cron=0 * * * * *` to enable cleanup.\n\n**Fix for immediate relief**\n1. Scale up Redis memory: `redis-cli CONFIG SET maxmemory 4gb`.\n2. Or flush stale cache: `redis-cli FLUSHDB` \u2014 WARNING: causes cold cache.    Coordinate with application team.\n\n**Permanent fix**\nAdd TTL to all cache keys at write time: `SETEX key <ttl-seconds> value`. For Spring Cache: `@Cacheable(cacheNames = 'products', cacheManager = ttlCacheManager(300))`."
+  },
+  {
+    "article_id": "KB-00020",
+    "title": "Application Deployment Rollback Procedure",
+    "domain": "app_support",
+    "tags": [
+      "deployment",
+      "rollback",
+      "kubernetes",
+      "helm",
+      "canary"
+    ],
+    "updated": "2025-12-05",
+    "body": "Rollback must be executed within 15 minutes of a bad deployment per SLA. This procedure covers Kubernetes/Helm deployments (most services) and legacy VM deployments.\n\n**Kubernetes/Helm rollback (fastest)**\n`helm rollback <release-name> 0` \u2014 rolls back to the previous revision. Or: `kubectl rollout undo deployment/<name>` for non-Helm deployments.\nCheck history: `helm history <release-name>` or `kubectl rollout history deployment/<name>`.\n\n**Verify rollback**\n`kubectl rollout status deployment/<name> --timeout=120s` \u2014 waits up to 2 min for pods to be ready. Check `kubectl get pods` for pod status and age.\n\n**VM-based rollback**\nServices on VMs use symlink-based deployment: `ln -sfn /opt/app/releases/<prev-version> /opt/app/current` then `systemctl restart <service>`.\nActive releases: `ls -lt /opt/app/releases/` \u2014 newest first.\n\n**Database migration rollback**\nIf the bad deployment ran a DB migration, rollback may not be automatic. Check `/db/migrations/` for a corresponding `V<n>__down.sql` file. If no down migration exists, escalate to DBA team \u2014 a data restore from backup may be needed.\n\n**Communication**\nPost to #incidents Slack channel: deployment rolled back, reason, impact window. Update incident ticket. Schedule post-mortem within 48h.\n\n**Related:** INC-0007 for a rollback that required DB intervention."
+  }
+]
