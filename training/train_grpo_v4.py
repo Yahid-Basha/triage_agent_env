@@ -65,6 +65,12 @@ import matplotlib.ticker as mticker
 import numpy as np
 from rouge_score import rouge_scorer
 
+# Lazy import — TrainerCallback is available whenever TRL/transformers are installed.
+try:
+    from transformers import TrainerCallback as _TrainerCallback
+except ImportError:
+    _TrainerCallback = object  # graceful no-op if transformers isn't on path yet
+
 # ── Project root on path ──────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -85,6 +91,11 @@ PLOTS_DIR  = ROOT / "assets" / "plots"
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "yahid/triage-agent-qwen3b")
+
+# ── Completion buffer (populated by r_parsimony, flushed by CompletionDumper) ─
+# Each entry: {ticket_id, completion, parsed, resolution, cited_artifacts,
+#              confidence, escalate, r_parsimony}
+_PENDING_COMPLETIONS: List[dict] = []
 
 
 # ── Episode state (same as before) ────────────────────────────────────────────
@@ -781,19 +792,78 @@ def r_calibration(completions, ticket_id, **kwargs):
 
 # ── Reward 5: Length parsimony (anti-stub, anti-rambling) ──
 def r_parsimony(completions, **kwargs):
+    tids = list(kwargs.get("ticket_id") or [])
     out = []
-    for c in completions:
+    for i, c in enumerate(completions):
         text = _completion_text(c)
         parsed = parse_tool_call(text)
         if parsed is None:
-            out.append(0.0); continue
-        n = len(text.split())
-        if n < 40:        out.append(0.2)   # stub
-        elif n < 80:      out.append(0.6)
-        elif n <= 400:    out.append(1.0)   # sweet spot
-        elif n <= 800:    out.append(0.6)
-        else:             out.append(0.2)   # rambling
+            score = 0.0
+        else:
+            n = len(text.split())
+            if n < 40:       score = 0.2   # stub
+            elif n < 80:     score = 0.6
+            elif n <= 400:   score = 1.0   # sweet spot
+            elif n <= 800:   score = 0.6
+            else:            score = 0.2   # rambling
+        out.append(score)
+
+        # Capture to disk buffer — r_parsimony runs last so all parse data is fresh.
+        if i < len(tids):
+            entry: dict = {
+                "ticket_id": tids[i],
+                "completion": text[:3000],
+                "parsed": parsed is not None,
+                "r_parsimony": round(score, 4),
+            }
+            if parsed and parsed["tool_name"] == "submit_resolution":
+                args = parsed.get("arguments", {})
+                res_text, _ = _extract_resolution_text(args)
+                cited, _ = _extract_citation_ids(args, text)
+                entry["resolution"] = res_text[:500] if res_text else None
+                entry["cited_artifacts"] = sorted(cited) if cited else []
+                entry["confidence"] = args.get("confidence")
+                entry["escalate"] = args.get("escalate")
+            _PENDING_COMPLETIONS.append(entry)
+
     return out
+
+
+# ── CompletionDumper callback ─────────────────────────────────────────────────
+
+class CompletionDumper(_TrainerCallback):
+    """Saves completion batches from _PENDING_COMPLETIONS to JSONL every N steps.
+
+    Each file is named completions/step_NNNN.jsonl and contains one JSON object
+    per completion with ticket_id, full completion text, parse status, extracted
+    resolution/citations, and the parsimony reward score.
+    Use these files post-run to read actual model outputs and inspect quality.
+    """
+
+    def __init__(self, out_dir: Path, dump_every: int = 25):
+        self.out_dir = Path(out_dir)
+        self.dump_every = dump_every
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if _PENDING_COMPLETIONS and state.global_step % self.dump_every == 0:
+            self._flush(state.global_step)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if _PENDING_COMPLETIONS:
+            self._flush(state.global_step)
+
+    def _flush(self, step: int):
+        global _PENDING_COMPLETIONS
+        entries = _PENDING_COMPLETIONS[:]
+        _PENDING_COMPLETIONS.clear()
+        for e in entries:
+            e.setdefault("step", step)
+        path = self.out_dir / f"step_{step:04d}.jsonl"
+        with open(path, "w") as fh:
+            for entry in entries:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        print(f"  ✓ {len(entries)} completions → {path.name}")
 
 
 # ── Smoke-test reward table ───────────────────────────────────────────────────
@@ -977,6 +1047,118 @@ def save_reward_curve(log_history: list, output_path: Path):
     print(f"  ✓ Reward curve saved → {output_path}")
 
 
+def save_per_ticket_heatmap(completions_by_ticket: List[tuple], output_path: Path):
+    """Heatmap: rows = tickets, cols = reward components + TOTAL.
+
+    Color encodes score (0=red, 1=green). Lets you instantly see which tickets
+    the model handles well and which rewards are bottlenecks per ticket.
+    """
+    if not completions_by_ticket:
+        return
+
+    tids         = [t[0] for t in completions_by_ticket]
+    completions  = [t[1] for t in completions_by_ticket]
+    prompts_list = [t[2] if len(t) > 2 else None for t in completions_by_ticket]
+
+    names = [n for n, _ in _REWARD_FUNCS]
+    all_raw: Dict[str, list] = {}
+    for name, fn in _REWARD_FUNCS:
+        try:
+            if name == "citation":
+                all_raw[name] = fn(completions, ticket_id=tids, prompts=prompts_list)
+            elif name in ("quality", "calib"):
+                all_raw[name] = fn(completions, ticket_id=tids)
+            else:
+                all_raw[name] = fn(completions)
+        except Exception:
+            all_raw[name] = [0.0] * len(completions)
+
+    scores_matrix = []
+    for i in range(len(completions)):
+        row = [all_raw[n][i] for n in names]
+        total = sum(row[j] * REWARD_WEIGHTS[j] for j in range(len(names))) / _REWARD_WEIGHT_SUM
+        scores_matrix.append(row + [total])
+
+    col_labels = names + ["TOTAL"]
+    data = np.array(scores_matrix)
+
+    fig, ax = plt.subplots(figsize=(max(9, len(col_labels) * 1.6), max(4, len(tids) * 0.7)))
+    im = ax.imshow(data, vmin=0, vmax=1, cmap="RdYlGn", aspect="auto")
+    ax.set_xticks(range(len(col_labels)))
+    ax.set_xticklabels(col_labels, rotation=30, ha="right", fontsize=10)
+    ax.set_yticks(range(len(tids)))
+    ax.set_yticklabels([t[:14] for t in tids], fontsize=9)
+    for i in range(len(tids)):
+        for j in range(len(col_labels)):
+            v = data[i, j]
+            ax.text(j, i, f"{v:.2f}", ha="center", va="center",
+                    fontsize=8, color="black" if 0.25 < v < 0.80 else "white")
+    plt.colorbar(im, ax=ax, fraction=0.03, pad=0.04)
+    ax.set_title("Per-Ticket Reward Heatmap", fontsize=13, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  ✓ Reward heatmap saved → {output_path}")
+
+
+def save_calibration_scatter(completions_by_ticket: List[tuple], output_path: Path):
+    """Scatter of model confidence vs ROUGE-L quality.
+
+    Points on the diagonal = perfectly calibrated. Points above = overconfident,
+    below = underconfident. Useful for understanding if the model knows when it's wrong.
+    """
+    if not completions_by_ticket:
+        return
+
+    tids        = [t[0] for t in completions_by_ticket]
+    completions = [t[1] for t in completions_by_ticket]
+    idx = get_ticket_index()
+
+    xs, ys, labels = [], [], []
+    for comp, tid in zip(completions, tids):
+        text = _completion_text(comp)
+        parsed = parse_tool_call(text)
+        if parsed is None or parsed["tool_name"] != "submit_resolution":
+            continue
+        args = parsed.get("arguments", {})
+        try:
+            conf = float(args.get("confidence", 0.5))
+            conf = max(0.0, min(1.0, conf))
+        except Exception:
+            continue
+        gold = idx.get(tid, {}).get("gold_resolution", "")
+        submitted, _ = _extract_resolution_text(args)
+        if not submitted or not gold:
+            continue
+        quality = _ROUGE.score(gold, submitted)["rougeL"].fmeasure
+        xs.append(conf)
+        ys.append(quality)
+        labels.append(tid)
+
+    if not xs:
+        print("  (no valid completions for calibration scatter — skipping)")
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    scatter = ax.scatter(xs, ys, c=range(len(xs)), cmap="tab10", s=90, alpha=0.85, zorder=3)
+    for x, y, lbl in zip(xs, ys, labels):
+        ax.annotate(lbl[:12], (x, y), textcoords="offset points",
+                    xytext=(6, 4), fontsize=7, alpha=0.8)
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.35, linewidth=1.5, label="perfect calibration")
+    ax.set_xlabel("Model confidence", fontsize=12)
+    ax.set_ylabel("ROUGE-L quality", fontsize=12)
+    ax.set_title("Confidence vs Quality (calibration)", fontsize=13, fontweight="bold")
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.25)
+    plt.colorbar(scatter, ax=ax, fraction=0.03, pad=0.04, label="ticket index")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  ✓ Calibration scatter saved → {output_path}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1069,6 +1251,13 @@ def main():
         args=training_args,
     )
 
+    # Save completions to disk every 25 steps for post-run inspection.
+    completion_dumper = CompletionDumper(
+        out_dir=OUTPUT_DIR / "completions",
+        dump_every=25 if not smoke else 1,
+    )
+    trainer.add_callback(completion_dumper)
+
     try:
         print("\nStarting training…")
         trainer.train()
@@ -1076,18 +1265,21 @@ def main():
         print(f"\n✓ Training complete. Model saved → {OUTPUT_DIR}")
         save_reward_curve(trainer.state.log_history, PLOTS_DIR / "reward_curve.png")
 
-        # ── Smoke-test reward table ────────────────────────────────────────────
-        if smoke:
-            try:
-                pairs = _smoke_generate(str(OUTPUT_DIR), train_tickets, n=8)
-                print_reward_table(pairs)
-            except Exception as e:
-                print(f"  [warn] reward table generation failed: {e}")
+        # Post-training eval: reward table + heatmap + calibration scatter.
+        # Runs whether --smoke-test or full run so you always get fresh plots.
+        try:
+            n_eval = min(8, len(train_tickets))
+            eval_pairs = _smoke_generate(str(OUTPUT_DIR), train_tickets, n=n_eval)
+            print_reward_table(eval_pairs)
+            save_per_ticket_heatmap(eval_pairs, PLOTS_DIR / "reward_heatmap.png")
+            save_calibration_scatter(eval_pairs, PLOTS_DIR / "calibration_scatter.png")
+        except Exception as e:
+            print(f"  [warn] post-training eval failed: {e}")
 
         # Auto-commit plots if in a git repo
         for cmd in [
-            ["git", "add", "assets/plots/reward_curve.png"],
-            ["git", "commit", "-m", f"feat: GRPO reward curve ({max_steps} steps)"],
+            ["git", "add", "assets/plots/"],
+            ["git", "commit", "-m", f"feat: GRPO plots ({max_steps} steps)"],
             ["git", "push"],
         ]:
             r = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
