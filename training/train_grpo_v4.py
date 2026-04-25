@@ -4,7 +4,7 @@
 # TRL's Ascend-patched import_utils.py calls importlib.util.find_spec("vllm_ascend")
 # at module level. find_spec raises ValueError if the module is in sys.modules
 # but has __spec__=None. This stub gives it a valid spec so TRL continues.
-import sys
+import sys, types, importlib, importlib.util
 from unittest.mock import MagicMock
 
 # Recursive mock that returns itself for any attribute or submodule access
