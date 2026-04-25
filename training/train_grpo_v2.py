@@ -306,11 +306,17 @@ def r_calibration(prompts, completions, ticket_id, **kwargs):
 
 
 def r_format(prompts, completions, ticket_id, **kwargs):
-    """Bonus reward for any parseable tool call. Bootstraps tool-using behavior."""
+    """Shaped reward: +0.1 for valid tool call, +0.05 extra for submit_resolution."""
     out = []
     for completion in completions:
         text = _completion_text(completion)
-        out.append(0.1 if parse_tool_call(text) is not None else 0.0)
+        parsed = parse_tool_call(text)
+        if parsed is None:
+            out.append(0.0)
+        elif parsed["tool_name"] == "submit_resolution":
+            out.append(0.15)  # higher reward for actually submitting
+        else:
+            out.append(0.1)   # lower reward for search-only
     return out
 
 
@@ -484,6 +490,9 @@ def main():
         hub_strategy="every_save",
         remove_unused_columns=False,
         **vllm_kwargs,
+        temperature=1.0,
+        top_p=0.9,
+        repetition_penalty=1.1,
     )
 
     trainer = GRPOTrainer(
