@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """
-GRPO training for TriageAgent — grounded single-call rollout approach (v4).
+GRPO training for TriageAgent — grounded single-call rollout approach (v4.1).
+
+Changes from v4:
+- r_citation_grounding gains a behavioral floor: completions that cite any ID
+  from the Retrieved Context (even the wrong article) now score 0.3 instead of
+  0.0. Hallucinated IDs (not in context) score 0.05. This bootstraps non-zero
+  citation gradient so GRPO can amplify the behavior. The floor only activates
+  when the prompt is available (via the new `prompts` kwarg that TRL passes).
+- build_training_prompt appends an explicit citation requirement sentence so the
+  base model is less likely to emit `cited_artifacts: []` before any gradient.
+- _smoke_generate now returns (ticket_id, completion, prompt) triples and uses
+  a fresh GenerationConfig to avoid the `do_sample=False + top_p` warning.
+- print_reward_table forwards prompts to r_citation_grounding so the floor
+  logic activates in smoke-test scoring too.
+- Added _prompt_user_text() helper used by the citation floor.
 
 Changes from v3:
 - Replaced parse_tool_call with a balanced-brace JSON extractor that handles
@@ -347,6 +361,17 @@ def _completion_text(completion):
     return str(completion)
 
 
+def _prompt_user_text(prompt) -> str:
+    """Extract the user-message text from a chat-format prompt list."""
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, list):
+        for msg in prompt:
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                return msg.get("content", "")
+    return ""
+
+
 # ── Episode runner — runs in reward function ──────────────────────────────────
 
 # Cache: maps ticket_id → cached agent runs to avoid re-running across reward fns
@@ -456,7 +481,9 @@ def build_training_prompt(ticket, corpus, distractor_k=3):
             f"**Description:** {ticket['description']}\n\n"
             f"# Retrieved Context:\n{context_block}\n\n"
             "Resolve this ticket using ONLY the retrieved context. Output exactly one "
-            "`submit_resolution` tool call as a JSON code block."
+            "`submit_resolution` tool call as a JSON code block. "
+            "`cited_artifacts` MUST list at least one ID from the Retrieved Context above "
+            "(e.g. KB-XXXXX); an empty list [] is only valid when escalate=true."
         )},
     ]
 
@@ -646,18 +673,24 @@ def r_resolution_quality(completions, ticket_id, **kwargs):
 
 
 # ── Reward 3: Citation F1 vs gold ──
-def r_citation_grounding(completions, ticket_id, **kwargs):
-    """F1 of cited IDs vs gold.
+def r_citation_grounding(completions, ticket_id, prompts=None, **kwargs):
+    """F1 of cited IDs vs gold, with a behavioral floor for context-grounded citations.
 
     Falls back to regex-extracting KB-/INC-/TKT- IDs from the completion text
-    when the model omits `cited_artifacts` (common during cold-start — see
-    the wandb step-5 export where every completion had IDs hidden in
-    `ticket_id` / `ticket_number` strings instead). Fallback hits are
-    multiplied by 0.6 so canonical `cited_artifacts` is preferred.
+    when the model omits `cited_artifacts` (common during cold-start). Fallback
+    hits are multiplied by 0.6 so canonical `cited_artifacts` is preferred.
+
+    Behavioral floor (requires `prompts` kwarg that TRL passes during training):
+      - Cited an ID that appears in the Retrieved Context but isn't gold: 0.3
+        This bootstraps non-zero gradient so GRPO can teach correct citing.
+      - Cited an ID NOT in context (hallucinated): 0.05 — small signal, no reward.
+      - Cited a gold ID: floor(0.3) + 0.7 * F1, so perfect citation reaches 1.0.
+    When prompts is None (smoke-test without prompt data), falls back to plain F1.
     """
     idx = get_ticket_index()
+    _prompts = list(prompts) if prompts is not None else [None] * len(completions)
     out = []
-    for c, tid in zip(completions, ticket_id):
+    for c, tid, pr in zip(completions, ticket_id, _prompts):
         text = _completion_text(c)
         parsed = parse_tool_call(text)
         ticket = idx.get(tid, {})
@@ -678,16 +711,35 @@ def r_citation_grounding(completions, ticket_id, **kwargs):
             esc = bool(args.get("escalate", False))
             out.append(1.0 if esc else 0.1)
             continue
+
         if not cited:
             out.append(0.0); continue
+
+        # Extract IDs present in the retrieved context block from the prompt.
+        # "### KB-00002" headers are the canonical marker build_training_prompt uses.
+        ctx_ids = set(re.findall(r'### (\S+)', _prompt_user_text(pr))) if pr is not None else set()
+
         tp = len(cited & gold)
         if tp == 0:
-            out.append(0.0); continue
-        p, r = tp / len(cited), tp / len(gold)
-        f1 = 2 * p * r / (p + r)
+            # Cited but didn't match gold — check if at least from context.
+            if ctx_ids:
+                cited_in_ctx = bool(cited & ctx_ids)
+                out.append(0.3 if cited_in_ctx else 0.05)
+            else:
+                out.append(0.0)
+            continue
+
+        # tp > 0: at least one gold ID cited correctly.
+        p_val = tp / len(cited)
+        r_val = tp / len(gold)
+        f1 = 2 * p_val * r_val / (p_val + r_val)
         if not used_canonical:
             f1 *= 0.6
-        out.append(f1)
+        # Floor of 0.3 for citing from context; without prompts keep plain F1.
+        if ctx_ids and (cited & ctx_ids):
+            out.append(0.3 + 0.7 * f1)
+        else:
+            out.append(f1)
     return out
 
 
@@ -755,9 +807,10 @@ _REWARD_FUNCS = [
 def _smoke_generate(model_or_path, tickets: list, n: int = 8) -> List[tuple]:
     """Run fast greedy inference on the first *n* tickets.
 
-    Returns a list of (ticket_id, completion_text) pairs.
+    Returns a list of (ticket_id, completion_text, prompt_messages) triples.
+    The prompt is included so print_reward_table can activate the citation floor.
     """
-    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
     import torch
 
     print(f"\n  Generating {n} smoke completions for reward table…")
@@ -770,6 +823,14 @@ def _smoke_generate(model_or_path, tickets: list, n: int = 8) -> List[tuple]:
     )
     model.eval()
 
+    # Use a fresh GenerationConfig to avoid inheriting model's top_p/top_k
+    # defaults which trigger "do_sample=False but top_p is set" warnings.
+    gen_cfg = GenerationConfig(
+        max_new_tokens=256,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+
     corpus = get_corpus()
     results = []
     for t in tickets[:n]:
@@ -781,36 +842,35 @@ def _smoke_generate(model_or_path, tickets: list, n: int = 8) -> List[tuple]:
             return_tensors="pt",
         ).to(model.device)
         with torch.no_grad():
-            out = model.generate(
-                input_ids,
-                max_new_tokens=256,
-                do_sample=False,
-                temperature=1.0,
-                pad_token_id=tokenizer.eos_token_id,
-            )
+            out = model.generate(input_ids, generation_config=gen_cfg)
         new_tokens = out[0][input_ids.shape[-1]:]
         text = tokenizer.decode(new_tokens, skip_special_tokens=True)
-        results.append((tid, text))
+        results.append((tid, text, messages))
     return results
 
 
 def print_reward_table(completions_by_ticket: List[tuple]) -> None:
-    """Print a compact reward table for a batch of (ticket_id, completion) pairs.
+    """Print a compact reward table for a batch of (ticket_id, completion[, prompt]) tuples.
 
     Columns: #  ticket_id  format  quality  citation  calib  parsim  TOTAL
-    No prompt or completion text is shown — rewards only.
+    Accepts both 2-tuples (ticket_id, completion) and 3-tuples
+    (ticket_id, completion, prompt). When prompts are present they are forwarded
+    to r_citation_grounding so the behavioral floor activates.
     """
     if not completions_by_ticket:
         print("  (no completions to score)")
         return
 
-    tids        = [t for t, _ in completions_by_ticket]
-    completions = [c for _, c in completions_by_ticket]
+    tids         = [t[0] for t in completions_by_ticket]
+    completions  = [t[1] for t in completions_by_ticket]
+    prompts_list = [t[2] if len(t) > 2 else None for t in completions_by_ticket]
 
     raw: Dict[str, list] = {}
     for name, fn in _REWARD_FUNCS:
         try:
-            if name in ("quality", "citation", "calib"):
+            if name == "citation":
+                raw[name] = fn(completions, ticket_id=tids, prompts=prompts_list)
+            elif name in ("quality", "calib"):
                 raw[name] = fn(completions, ticket_id=tids)
             else:
                 raw[name] = fn(completions)
