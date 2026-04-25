@@ -1201,7 +1201,6 @@ def main():
 
     vllm_kwargs = dict(
         use_vllm=True,
-        vllm_mode="colocate",
         vllm_gpu_memory_utilization=0.4,
     ) if use_vllm else dict(use_vllm=False)
 
