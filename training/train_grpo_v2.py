@@ -179,6 +179,8 @@ TOOL_CALL_REGEXES = [
     re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL),
     # First standalone JSON object that mentions a known tool
     re.compile(r'(\{[^{}]*"(?:tool_name|name|function)"[^{}]*\})', re.DOTALL),
+    # Handle {"submit_resolution": {...}} shorthand format
+    re.compile(r'(\{"submit_resolution"\s*:\s*\{.*?\})\s*', re.DOTALL),
 ]
 
 KNOWN_TOOLS = {
@@ -198,6 +200,13 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
                 continue
             # Normalize: accept tool_name, name, or function.name
             name = obj.get("tool_name") or obj.get("name")
+            # If no tool_name key, check if a known tool IS the key
+            if not name:
+                for tool in KNOWN_TOOLS:
+                    if tool in obj:
+                        name = tool
+                        args = obj[tool] if isinstance(obj[tool], dict) else {}
+                        break
             if not name and "function" in obj:
                 name = obj["function"].get("name") if isinstance(obj["function"], dict) else None
             if name not in KNOWN_TOOLS:
