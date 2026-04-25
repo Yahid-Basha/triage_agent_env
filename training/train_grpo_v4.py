@@ -26,7 +26,7 @@ _mk_merge.run_merge = lambda *args, **kwargs: None
 
 _stub_pkg("llm_blender")
 
-for _opt_pkg in ["deepspeed", "peft", "unsloth", "liger_kernel", "comet_ml", "mlflow"]:
+for _opt_pkg in ["deepspeed", "unsloth", "liger_kernel", "comet_ml", "mlflow"]:
     _stub_pkg(_opt_pkg)
 
 _pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
