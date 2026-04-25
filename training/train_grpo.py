@@ -18,6 +18,7 @@ import json
 import sys
 from pathlib import Path
 from typing import List, Optional
+import matplotlib.pyplot as plt
 
 # ── Project root on path ─────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent
@@ -321,7 +322,7 @@ def main():
         loss_type="dr_grpo",
         # Schedule
         max_steps=max_steps,
-        save_steps=25
+        save_steps=25,
         logging_steps=1,
         # Hardware
         bf16=True,
@@ -330,7 +331,7 @@ def main():
         vllm_mode="colocate",
         vllm_gpu_memory_utilization=0.4,
         # Logging
-        report_to="trackio",
+        report_to="wandb",
         push_to_hub=True,
         hub_model_id="yahid/triage-agent-qwen3b",
         hub_strategy="every_save",
@@ -347,6 +348,19 @@ def main():
  
     try:
         trainer.train()
+
+        log_history = trainer.state.log_history
+        steps = [x["step"] for x in log_history if "reward" in x]
+        rewards = [x["reward"] for x in log_history if "reward" in x]
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(steps, rewards)
+        plt.xlabel("Step")
+        plt.ylabel("Reward")
+        plt.title("GRPO Training — Reward Curve")
+        plt.savefig(ROOT / "assets/plots/reward_curve.png", dpi=150)
+        print("Plot saved.")
+
         trainer.save_model()
         print(f"\n✓ Training complete. Model saved to {OUTPUT_DIR}")
     except Exception as e:
