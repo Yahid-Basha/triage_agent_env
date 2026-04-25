@@ -472,11 +472,17 @@ def build_training_prompt(ticket, corpus, distractor_k=3):
         f"### {a.get('article_id', a.get('id', ''))}\n{a.get('title', '')}\n{a.get('body', a.get('content', ''))[:1000]}"
         for a in context_items
     )
+    ONESHOT = """Example of correct output format:
+    ```json
+    {"tool_name": "submit_resolution", "arguments": {"resolution": "Verify TCP/179 reachability, check BGP timers, correct any AS or MD5 mismatches.", "cited_artifacts": ["KB-00001"], "confidence": 0.85, "escalate": false}}
+    ```
 
+    Now resolve THIS ticket:
+    """
     return [
         {"role": "system", "content": SYSTEM_PROMPT_GROUNDED},
         {"role": "user", "content": (
-            f"# Ticket: {ticket.get('ticket_id', ticket.get('id', ''))}\n"
+            f"{ONESHOT} # Ticket: {ticket.get('ticket_id', ticket.get('id', ''))}\n"
             f"**Title:** {ticket['title']}\n"
             f"**Description:** {ticket['description']}\n\n"
             f"# Retrieved Context:\n{context_block}\n\n"
@@ -1024,7 +1030,7 @@ def main():
         sig = inspect.signature(_check)
         if "log_completions" in sig.parameters:
             extra_kwargs["log_completions"] = True
-            extra_kwargs["num_completions_to_print"] = 2
+            extra_kwargs["num_completions_to_print"] = 0  # log to wandb only, skip console table
     except Exception:
         pass
 
