@@ -470,10 +470,10 @@ def main():
 
     training_args = GRPOConfig(
         output_dir=str(OUTPUT_DIR),
-        num_generations=4,
+        num_generations=8,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
-        max_completion_length=1024,
+        max_completion_length=2048,
         learning_rate=5e-6,
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
@@ -490,9 +490,10 @@ def main():
         hub_strategy="every_save",
         remove_unused_columns=False,
         **vllm_kwargs,
-        temperature=1.0,
-        top_p=0.9,
-        repetition_penalty=1.1,
+        temperature=1.2,
+        top_p=0.95,
+        top_k=50,
+        repetition_penalty=1.05,
     )
 
     trainer = GRPOTrainer(
