@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+
+import sys
+from unittest.mock import MagicMock
+
+# Stub out the libraries causing the import chain to break
+for mod in ["mergekit", "mergekit.config", "llm_blender"]:
+    sys.modules[mod] = MagicMock()
+    
 # ── vllm_ascend stub — must run before any TRL import ────────────────────────
 # TRL's Ascend-patched import_utils.py calls importlib.util.find_spec("vllm_ascend")
 # at module level. find_spec raises ValueError if the module is in sys.modules
@@ -18,6 +26,8 @@ _stub_pkg("vllm_ascend.distributed.device_communicators")
 _pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
 _pyhccl.PyHcclCommunicator = type("PyHcclCommunicator", (), {})
 del _stub_pkg, _pyhccl  # clean up helper
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 """
 GRPO training for TriageAgent — grounded single-call rollout approach (v4.1).
