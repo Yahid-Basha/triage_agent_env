@@ -321,16 +321,19 @@ def main():
         loss_type="dr_grpo",
         # Schedule
         max_steps=max_steps,
-        save_steps=max(1, max_steps // 2),
+        save_steps=25
         logging_steps=1,
         # Hardware
         bf16=True,
         # vLLM co-location: generation + training share the same A100
         use_vllm=True,
         vllm_mode="colocate",
-        vllm_gpu_memory_utilization=0.3,
+        vllm_gpu_memory_utilization=0.4,
         # Logging
         report_to="trackio",
+        push_to_hub=True,
+        hub_model_id="yahid/triage-agent-qwen3b",
+        hub_strategy="every_save",
     )
 
     trainer = GRPOTrainer(
@@ -341,11 +344,22 @@ def main():
         train_dataset=dataset,
         args=training_args,
     )
-
-    trainer.train()
-    trainer.save_model()
-    print(f"\nDone. Model saved to {OUTPUT_DIR}")
-
+ 
+    try:
+        trainer.train()
+        trainer.save_model()
+        print(f"\n✓ Training complete. Model saved to {OUTPUT_DIR}")
+    except Exception as e:
+        import traceback
+        print(f"\n✗ Training failed: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        # Still try to save whatever we have
+        try:
+            trainer.save_model()
+            print(f"✓ Partial model saved to {OUTPUT_DIR}")
+        except Exception:
+            pass
+        raise
 
 if __name__ == "__main__":
     main()
