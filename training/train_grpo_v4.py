@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+# ── vllm_ascend stub — must run before any TRL import ────────────────────────
+# TRL's Ascend-patched import_utils.py calls importlib.util.find_spec("vllm_ascend")
+# at module level. find_spec raises ValueError if the module is in sys.modules
+# but has __spec__=None. This stub gives it a valid spec so TRL continues.
+import sys as _sys, types as _types, importlib.util as _iutil
+def _stub_pkg(name):
+    m = _types.ModuleType(name)
+    m.__spec__ = _iutil.spec_from_loader(name, loader=None)
+    m.__path__ = []
+    m.__package__ = name
+    _sys.modules[name] = m
+    return m
+
+_stub_pkg("vllm_ascend")
+_stub_pkg("vllm_ascend.distributed")
+_stub_pkg("vllm_ascend.distributed.device_communicators")
+_pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
+_pyhccl.PyHcclCommunicator = type("PyHcclCommunicator", (), {})
+del _stub_pkg, _pyhccl  # clean up helper
+# ─────────────────────────────────────────────────────────────────────────────
 """
 GRPO training for TriageAgent — grounded single-call rollout approach (v4.1).
 
@@ -64,16 +84,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from rouge_score import rouge_scorer
-# Add at the very top, before `from trl import ...`
-import sys, types
-for name in [
-    'vllm_ascend',
-    'vllm_ascend.distributed',
-    'vllm_ascend.distributed.device_communicators',
-    'vllm_ascend.distributed.device_communicators.pyhccl',
-]:
-    sys.modules[name] = types.ModuleType(name)
-sys.modules['vllm_ascend.distributed.device_communicators.pyhccl'].PyHcclCommunicator = type('Stub', (), {})
+
 # Lazy import — TrainerCallback is available whenever TRL/transformers are installed.
 try:
     from transformers import TrainerCallback as _TrainerCallback
