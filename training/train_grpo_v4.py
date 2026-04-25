@@ -4,37 +4,35 @@
 # TRL's Ascend-patched import_utils.py calls importlib.util.find_spec("vllm_ascend")
 # at module level. find_spec raises ValueError if the module is in sys.modules
 # but has __spec__=None. This stub gives it a valid spec so TRL continues.
-import sys as _sys, types as _types, importlib.util as _iutil
-def _stub_pkg(name):
-    m = _types.ModuleType(name)
-    m.__spec__ = _iutil.spec_from_loader(name, loader=None)
-    m.__path__ = []
-    m.__package__ = name
-    m.__version__ = "1.0.0"
-    _sys.modules[name] = m
-    return m
+import sys
+from unittest.mock import MagicMock
 
-_stub_pkg("vllm_ascend")
-_stub_pkg("vllm_ascend.distributed")
-_stub_pkg("vllm_ascend.distributed.device_communicators")
-_stub_pkg("mergekit")
-_mk_config = _stub_pkg("mergekit.config")
-_mk_config.MergeConfiguration = type("MergeConfiguration", (), {})
+# Recursive mock that returns itself for any attribute or submodule access
+class OmniStub(MagicMock):
+    def __getattr__(self, name):
+        if name in ("__file__", "__path__"): return []
+        if name == "__version__": return "1.0.0"
+        return OmniStub()
 
-_mk_merge = _stub_pkg("mergekit.merge")
-_mk_merge.MergeOptions = type("MergeOptions", (), {})
-_mk_merge.run_merge = lambda *args, **kwargs: None
+# The "Wall of Silence" for optional TRL dependencies
+# These targets cover everything from your previous errors and the new vllm crash
+stub_targets = [
+    "vllm", "vllm_ascend", "mergekit", "llm_blender", 
+    "deepspeed", "unsloth", "liger_kernel", "comet_ml", "mlflow"
+]
 
-_stub_pkg("llm_blender")
+for mod_name in stub_targets:
+    mock = OmniStub()
+    sys.modules[mod_name] = mock
+    # Handle the specific sub-paths TRL's lazy-loader probes
+    for sub in ["config", "merge", "chunked_loss", "distributed", "extras"]:
+        sys.modules[f"{mod_name}.{sub}"] = mock
 
-for _opt_pkg in ["deepspeed", "unsloth", "liger_kernel", "comet_ml", "mlflow"]:
-    _stub_pkg(_opt_pkg)
-
-_pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
-_pyhccl.PyHcclCommunicator = type("PyHcclCommunicator", (), {})
-
-del _stub_pkg, _pyhccl, _mk_config, _mk_merge, _opt_pkg  # clean up helper
-
+# Specific dummy classes that TRL expects to exist in the namespace
+sys.modules["vllm.distributed.device_communicators.pynccl"] = OmniStub()
+sys.modules["vllm.distributed.device_communicators.pynccl"].PyNcclCommunicator = type("PyNcclCommunicator", (), {})
+sys.modules["mergekit.config"].MergeConfiguration = type("MergeConfiguration", (), {})
+sys.modules["mergekit.merge"].MergeOptions = type("MergeOptions", (), {})
 
 # ─────────────────────────────────────────────────────────────────────────────
 """
