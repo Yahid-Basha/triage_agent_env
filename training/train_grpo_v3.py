@@ -587,7 +587,7 @@ def main():
         output_dir=str(OUTPUT_DIR),
         num_generations=8,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=8,
         max_completion_length=512,
         learning_rate=1e-5,
         warmup_steps=warmup_steps,
@@ -607,7 +607,6 @@ def main():
         **vllm_kwargs,
         temperature=0.9,
         top_p=0.95,
-        top_k=-1,
         repetition_penalty=1.0,
         **extra_kwargs,
     )
