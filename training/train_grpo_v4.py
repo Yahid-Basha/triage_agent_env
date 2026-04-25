@@ -10,6 +10,7 @@ def _stub_pkg(name):
     m.__spec__ = _iutil.spec_from_loader(name, loader=None)
     m.__path__ = []
     m.__package__ = name
+    m.__version__ = "1.0.0"
     _sys.modules[name] = m
     return m
 
