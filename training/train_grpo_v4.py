@@ -394,14 +394,18 @@ def run_episode_from_completion(completion: str, ticket_id: str) -> _State:
 
 SYSTEM_PROMPT_GROUNDED = """You are an enterprise IT triage agent. You resolve support tickets using ONLY the retrieved context provided in the user message.
 
-You MUST output your tool call as a single JSON object inside a ```json code block:
+You MUST output your answer in this EXACT format — no other format is accepted:
+
 ```json
-{"tool_name": "submit_resolution", "arguments": {"resolution": "...", "cited_artifacts": ["KB-00001"], "confidence": 0.85, "escalate": false}}
+{"tool_name": "submit_resolution", "arguments": {"resolution": "plain text answer here", "cited_artifacts": ["KB-00001"], "confidence": 0.85, "escalate": false}}
 ```
 
-Rules:
-- Cite ONLY artifact IDs that appear in the Retrieved Context section.
-- If the context does not contain enough information to resolve the ticket, set escalate=true and cite nothing.
+Critical format rules — violations are penalised:
+- The outer wrapper MUST be a ```json ... ``` code fence. Do NOT use <tool_call> tags, Python syntax, or any other format.
+- "resolution" MUST be a plain string (not a JSON object, not a list, not nested). Write the resolution as prose.
+- "cited_artifacts" MUST be a JSON array of string IDs (e.g. ["KB-00001"]). Cite ONLY IDs that appear in the Retrieved Context section.
+- "confidence" MUST be a float between 0.0 and 1.0.
+- "escalate" MUST be a boolean. Set to true only when the context is insufficient to resolve the ticket; in that case cite nothing.
 - Output exactly ONE tool call. Do not search or fetch — all relevant context is already provided."""
 
 
@@ -463,34 +467,50 @@ def build_dataset(tickets: list, corpus: Corpus):
 
 # ── Reward 1: Graduated format (5 partial-credit tiers) ──
 def r_format_graduated(completions, **kwargs):
-    """0.0 → 1.0 in five steps. Forces variance even when model fails to submit."""
+    """0.0 → 1.0 in five steps. Forces variance even when model fails to submit.
+
+    Canonical format (```json fence) is rewarded more than alternative parseable
+    formats at every tier so GRPO has a clear gradient toward the one true format.
+    """
     out = []
     for c in completions:
         text = _completion_text(c)
         score = 0.0
-        # Tier 1: contains any tool-call markup
-        if "```json" in text or "<tool_call>" in text:
+        canonical = "```json" in text
+        # Tier 1: any tool-call markup present
+        # Canonical format gets 0.2; alternative formats (e.g. <tool_call>) get 0.1
+        # so the model sees a reward difference from the very first token.
+        if canonical:
             score = 0.2
+        elif "<tool_call>" in text:
+            score = 0.1
         parsed = parse_tool_call(text)
         if parsed is None:
             out.append(score)
             continue
         # Tier 2: parses to JSON
-        score = 0.4
+        score = 0.4 if canonical else 0.3
         # Tier 3: valid tool name
         if parsed["tool_name"] in KNOWN_TOOLS:
-            score = 0.6
+            score = 0.6 if canonical else 0.5
         # Tier 4: actually calls submit_resolution
         if parsed["tool_name"] == "submit_resolution":
-            score = 0.8
+            score = 0.8 if canonical else 0.65
             args = parsed.get("arguments", {})
-            # Tier 5: all required fields present and non-empty
+            # Tier 5: all required fields present, correct types, AND canonical format.
+            # Non-canonical format is capped at 0.85 so the model is always pushed
+            # toward ```json even when it gets the content perfectly right.
             req = {"resolution", "cited_artifacts", "confidence"}
-            if (req.issubset(args.keys())
+            fields_ok = (
+                req.issubset(args.keys())
                 and isinstance(args.get("resolution"), str)
                 and len(args["resolution"]) > 20
-                and isinstance(args.get("cited_artifacts"), list)):
+                and isinstance(args.get("cited_artifacts"), list)
+            )
+            if fields_ok and canonical:
                 score = 1.0
+            elif fields_ok:
+                score = 0.85
         out.append(score)
     return out
 
@@ -509,6 +529,13 @@ def r_resolution_quality(completions, ticket_id, **kwargs):
             out.append(0.0); continue
         submitted = parsed.get("arguments", {}).get("resolution", "")
         gold = idx.get(tid, {}).get("gold_resolution", "")
+        # Guard: ROUGE scorer requires plain strings; coerce if model output is nested
+        if isinstance(submitted, dict):
+            submitted = submitted.get("resolution", "") or str(submitted)
+        if isinstance(gold, dict):
+            gold = str(gold)
+        submitted = submitted if isinstance(submitted, str) else str(submitted)
+        gold = gold if isinstance(gold, str) else str(gold)
         if not submitted or not gold:
             out.append(0.0); continue
         f1 = _ROUGE.score(gold, submitted)["rougeL"].fmeasure
@@ -574,6 +601,8 @@ def r_calibration(completions, ticket_id, **kwargs):
         # Compute resolution quality on the fly (cheap; can cache)
         gold = idx.get(tid, {}).get("gold_resolution", "")
         submitted = args.get("resolution", "")
+        gold = gold if isinstance(gold, str) else str(gold)
+        submitted = submitted if isinstance(submitted, str) else str(submitted)
         quality = _ROUGE.score(gold, submitted)["rougeL"].fmeasure if (gold and submitted) else 0.0
         out.append(1.0 - (conf - quality) ** 2)
     return out
