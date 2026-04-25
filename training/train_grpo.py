@@ -316,6 +316,7 @@ def main():
         learning_rate=5e-6,
         warmup_ratio=0.1,
         lr_scheduler_type="cosine",
+        reward_weights=[1.0, 0.3, 0.2, 0.15],
         optim="adamw_8bit",
         # GRPO variant — dr_grpo fixes the length bias present in vanilla GRPO
         loss_type="dr_grpo",
@@ -339,7 +340,7 @@ def main():
     trainer = GRPOTrainer(
         model=MODEL,
         reward_funcs=[r_primary, r_grounding, r_efficiency, r_calibration],
-        reward_weights=[1.0, 0.3, 0.2, 0.15],
+        
         environment_factory=env_factory,
         train_dataset=dataset,
         args=training_args,
