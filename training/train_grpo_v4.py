@@ -10,6 +10,17 @@ Changes from v3:
   6/8 useful parses, 1/8 correctly rejected (string-value malformed),
   1/8 partial (model invented `resolution_notes` field — format reward will
   punish this and GRPO will iron it out).
+- Reward shaping fixes for cold-start (the 8-completion w&b export at step 5
+  showed r_resolution_quality and r_citation_grounding pinned at 0 while
+  r_format_graduated sat at 0.8 — no gradient toward correct schema):
+    * r_resolution_quality now falls back to alternate prose keys
+      (`details`, `resolution_steps`, `description`, `solution`, …) with a
+      0.6× discount so the canonical `resolution` field still wins.
+    * r_citation_grounding regex-scans args + completion text for
+      KB-/INC-/TKT- IDs when `cited_artifacts` is absent, also at 0.6×.
+    * r_format_graduated no longer credits 0.8 when `resolution` is
+      missing/empty; Python-call form is capped at 0.5 and double-wrap at
+      0.35 so canonical JSON-object form is strictly preferred.
 
 Changes from v2:
 - build_training_prompt injects retrieved context (gold + distractors) into every
@@ -31,7 +42,7 @@ import re
 import sys
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
@@ -465,6 +476,71 @@ def build_dataset(tickets: list, corpus: Corpus):
 
 # ── Reward functions ──────────────────────────────────────────────────────────
 
+# Fallback extractors used by the quality/citation rewards so that early in
+# training, when the model is still using wrong field names like `details` or
+# `resolution_steps`, the rewards aren't pinned at 0 — GRPO needs SOME
+# gradient to learn the schema. Canonical keys are still preferred via a
+# discount multiplier in the reward functions below.
+
+_ID_PATTERN = re.compile(r'\b(?:KB|INC|TKT|TRAIN|TICKET)-\d+\b')
+
+_RESOLUTION_FALLBACK_KEYS = (
+    "details",
+    "description",
+    "solution",
+    "resolution_steps",
+    "resolution_notes",
+    "notes",
+    "answer",
+    "text",
+    "action",
+    "steps_to_resolve",
+    "summary",
+)
+
+
+def _extract_resolution_text(args: dict) -> Tuple[str, bool]:
+    """Best-effort extraction of resolution prose. Returns (text, used_canonical_key)."""
+    if not isinstance(args, dict):
+        return "", False
+    canonical = args.get("resolution")
+    if isinstance(canonical, str) and canonical.strip():
+        return canonical, True
+    if isinstance(canonical, dict):
+        nested = canonical.get("resolution") or canonical.get("text") or ""
+        if isinstance(nested, str) and nested.strip():
+            return nested, False
+    for key in _RESOLUTION_FALLBACK_KEYS:
+        v = args.get(key)
+        if isinstance(v, str) and v.strip():
+            return v, False
+    string_vals = [v for v in args.values() if isinstance(v, str) and len(v.strip()) > 20]
+    if string_vals:
+        return max(string_vals, key=len), False
+    return "", False
+
+
+def _extract_citation_ids(args: dict, full_text: str) -> Tuple[Set[str], bool]:
+    """Best-effort citation extraction. Returns (ids, used_canonical_field)."""
+    if isinstance(args, dict):
+        canonical = args.get("cited_artifacts")
+        if isinstance(canonical, list):
+            ids = {str(c) for c in canonical if isinstance(c, (str, int))}
+            ids = {i for i in ids if _ID_PATTERN.fullmatch(i)}
+            if ids:
+                return ids, True
+        if isinstance(canonical, str) and _ID_PATTERN.fullmatch(canonical):
+            return {canonical}, True
+        for v in args.values():
+            if isinstance(v, list):
+                ids = {str(x) for x in v if isinstance(x, str) and _ID_PATTERN.fullmatch(x)}
+                if ids:
+                    return ids, False
+            elif isinstance(v, str) and _ID_PATTERN.fullmatch(v):
+                return {v}, False
+    return set(_ID_PATTERN.findall(full_text or "")), False
+
+
 # ── Reward 1: Graduated format (5 partial-credit tiers) ──
 def r_format_graduated(completions, **kwargs):
     """0.0 → 1.0 in five steps. Forces variance even when model fails to submit.
@@ -490,27 +566,49 @@ def r_format_graduated(completions, **kwargs):
             continue
         # Tier 2: parses to JSON
         score = 0.4 if canonical else 0.3
+
+        # Detect malformed-but-parseable structures the system prompt bans.
+        # Without these caps, the model gets 0.8 for emitting
+        # `submit_resolution(submit_resolution({wrong_keys}))` — a strong false
+        # positive that kills the gradient toward proper JSON-object form.
+        py_call = bool(re.search(
+            r'\b(?:' + '|'.join(KNOWN_TOOLS) + r')\s*\(', text))
+        double_wrap = bool(re.search(
+            r'submit_resolution\s*\([^)]*?submit_resolution\s*\(',
+            text, re.DOTALL))
+
         # Tier 3: valid tool name
         if parsed["tool_name"] in KNOWN_TOOLS:
             score = 0.6 if canonical else 0.5
-        # Tier 4: actually calls submit_resolution
+        # Tier 4: submit_resolution with a real `resolution` string
+        # (Was unconditionally 0.8 — that's what made the format reward lie
+        # about quality when the model used wrong keys.)
         if parsed["tool_name"] == "submit_resolution":
-            score = 0.8 if canonical else 0.65
             args = parsed.get("arguments", {})
+            has_resolution = (
+                isinstance(args.get("resolution"), str)
+                and len(args["resolution"].strip()) > 20
+            )
+            if has_resolution:
+                score = 0.8 if canonical else 0.65
             # Tier 5: all required fields present, correct types, AND canonical format.
-            # Non-canonical format is capped at 0.85 so the model is always pushed
-            # toward ```json even when it gets the content perfectly right.
             req = {"resolution", "cited_artifacts", "confidence"}
             fields_ok = (
-                req.issubset(args.keys())
-                and isinstance(args.get("resolution"), str)
-                and len(args["resolution"]) > 20
+                has_resolution
+                and req.issubset(args.keys())
                 and isinstance(args.get("cited_artifacts"), list)
             )
-            if fields_ok and canonical:
+            if fields_ok and canonical and not py_call:
                 score = 1.0
             elif fields_ok:
                 score = 0.85
+
+        # Structural penalties — applied last so they cap whatever tier was reached.
+        if double_wrap:
+            score = min(score, 0.35)
+        elif py_call:
+            score = min(score, 0.5)
+
         out.append(score)
     return out
 
@@ -519,7 +617,14 @@ def r_format_graduated(completions, **kwargs):
 _ROUGE = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
 
 def r_resolution_quality(completions, ticket_id, **kwargs):
-    """Continuous text-similarity score. Drives most of the variance."""
+    """Continuous text-similarity score. Drives most of the variance.
+
+    Uses a fallback extractor: if the model wrote prose under the wrong key
+    (`details`, `resolution_steps`, etc.) we still measure ROUGE against gold,
+    but multiply by 0.6 so the canonical `resolution` field is strictly preferred.
+    Without this fallback, the entire reward is 0 for every completion that
+    doesn't already know the schema, which gives GRPO no gradient to learn it.
+    """
     idx = get_ticket_index()
     out = []
     for c, tid in zip(completions, ticket_id):
@@ -527,24 +632,29 @@ def r_resolution_quality(completions, ticket_id, **kwargs):
         parsed = parse_tool_call(text)
         if parsed is None or parsed["tool_name"] != "submit_resolution":
             out.append(0.0); continue
-        submitted = parsed.get("arguments", {}).get("resolution", "")
+        args = parsed.get("arguments", {})
+        submitted, used_canonical = _extract_resolution_text(args)
         gold = idx.get(tid, {}).get("gold_resolution", "")
-        # Guard: ROUGE scorer requires plain strings; coerce if model output is nested
-        if isinstance(submitted, dict):
-            submitted = submitted.get("resolution", "") or str(submitted)
-        if isinstance(gold, dict):
-            gold = str(gold)
-        submitted = submitted if isinstance(submitted, str) else str(submitted)
         gold = gold if isinstance(gold, str) else str(gold)
         if not submitted or not gold:
             out.append(0.0); continue
         f1 = _ROUGE.score(gold, submitted)["rougeL"].fmeasure
+        if not used_canonical:
+            f1 *= 0.6
         out.append(f1)
     return out
 
 
 # ── Reward 3: Citation F1 vs gold ──
 def r_citation_grounding(completions, ticket_id, **kwargs):
+    """F1 of cited IDs vs gold.
+
+    Falls back to regex-extracting KB-/INC-/TKT- IDs from the completion text
+    when the model omits `cited_artifacts` (common during cold-start — see
+    the wandb step-5 export where every completion had IDs hidden in
+    `ticket_id` / `ticket_number` strings instead). Fallback hits are
+    multiplied by 0.6 so canonical `cited_artifacts` is preferred.
+    """
     idx = get_ticket_index()
     out = []
     for c, tid in zip(completions, ticket_id):
@@ -556,16 +666,16 @@ def r_citation_grounding(completions, ticket_id, **kwargs):
 
         if parsed is None or parsed["tool_name"] != "submit_resolution":
             out.append(0.0); continue
-        cited = set(parsed.get("arguments", {}).get("cited_artifacts", []))
+        args = parsed.get("arguments", {})
+        cited, used_canonical = _extract_citation_ids(args, text)
 
-        # Unanswerable case: reward abstention (cite nothing, escalate)
         if is_unans:
-            esc = bool(parsed["arguments"].get("escalate", False))
+            esc = bool(args.get("escalate", False))
             out.append(1.0 if (not cited and esc) else 0.3 if not cited else 0.0)
             continue
 
         if not gold:
-            esc = bool(parsed.get("arguments", {}).get("escalate", False))
+            esc = bool(args.get("escalate", False))
             out.append(1.0 if esc else 0.1)
             continue
         if not cited:
@@ -574,7 +684,10 @@ def r_citation_grounding(completions, ticket_id, **kwargs):
         if tp == 0:
             out.append(0.0); continue
         p, r = tp / len(cited), tp / len(gold)
-        out.append(2 * p * r / (p + r))
+        f1 = 2 * p * r / (p + r)
+        if not used_canonical:
+            f1 *= 0.6
+        out.append(f1)
     return out
 
 
@@ -598,12 +711,12 @@ def r_calibration(completions, ticket_id, **kwargs):
             conf = max(0.0, min(1.0, conf))
         except Exception:
             out.append(0.0); continue
-        # Compute resolution quality on the fly (cheap; can cache)
         gold = idx.get(tid, {}).get("gold_resolution", "")
-        submitted = args.get("resolution", "")
         gold = gold if isinstance(gold, str) else str(gold)
-        submitted = submitted if isinstance(submitted, str) else str(submitted)
+        submitted, used_canonical = _extract_resolution_text(args)
         quality = _ROUGE.score(gold, submitted)["rougeL"].fmeasure if (gold and submitted) else 0.0
+        if not used_canonical:
+            quality *= 0.6
         out.append(1.0 - (conf - quality) ** 2)
     return out
 
