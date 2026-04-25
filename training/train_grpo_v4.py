@@ -826,38 +826,52 @@ def r_parsimony(completions, **kwargs):
     for i, c in enumerate(completions):
         text = _completion_text(c)
         parsed = parse_tool_call(text)
-        if parsed is None:
-            score = 0.0
+        
+        # Check if the model actually finished its JSON block
+        is_finished = text.strip().endswith("```")
+        
+        if parsed is None or not is_finished:
+            score = 0.0  # Zero reward for unparseable or cut-off answers
         else:
             n = len(text.split())
-            if n < 40:       score = 0.2   # stub
-            elif n < 80:     score = 0.6
-            elif n <= 400:   score = 1.0   # sweet spot
-            elif n <= 800:   score = 0.6
-            else:            score = 0.2   # rambling
+            # Narrower sweet spot for 2026 production efficiency
+            if n < 60:        score = 0.1   # Too short
+            elif n < 100:     score = 0.5
+            elif n <= 250:    score = 1.0   # The "Goldilocks" zone
+            elif n <= 400:    score = 0.4   # Starting to ramble
+            else:             score = 0.0   # Rambling / Hallucinating
+            
         out.append(score)
-
-        # Capture to disk buffer — r_parsimony runs last so all parse data is fresh.
+        
+        # Buffer logic remains the same for CompletionDumper
         if i < len(tids):
-            entry: dict = {
+            _PENDING_COMPLETIONS.append({
                 "ticket_id": tids[i],
                 "completion": text[:3000],
-                "parsed": parsed is not None,
+                "parsed": parsed is not None and is_finished,
                 "r_parsimony": round(score, 4),
-            }
-            if parsed and parsed["tool_name"] == "submit_resolution":
-                args = parsed.get("arguments", {})
-                res_text, _ = _extract_resolution_text(args)
-                cited, _ = _extract_citation_ids(args, text)
-                entry["resolution"] = res_text[:500] if res_text else None
-                entry["cited_artifacts"] = sorted(cited) if cited else []
-                entry["confidence"] = args.get("confidence")
-                entry["escalate"] = args.get("escalate")
-            _PENDING_COMPLETIONS.append(entry)
-
+            })
     return out
 
-
+def r_repetition_penalty(completions, **kwargs):
+    """Penalizes completions that repeat the same KB/INC IDs multiple times."""
+    out = []
+    for c in completions:
+        text = _completion_text(c)
+        ids = _ID_PATTERN.findall(text)
+        if not ids:
+            out.append(1.0)
+            continue
+            
+        # Calculate ratio of unique IDs to total IDs cited
+        unique_ratio = len(set(ids)) / len(ids)
+        
+        # If model repeats the same ID more than twice, start penalizing
+        if len(ids) > 3 and unique_ratio < 0.5:
+            out.append(unique_ratio) # e.g., 0.2 score for heavy repetition
+        else:
+            out.append(1.0)
+    return out
 # ── CompletionDumper callback ─────────────────────────────────────────────────
 
 class CompletionDumper(_TrainerCallback):
@@ -1250,12 +1264,12 @@ def main():
         per_device_train_batch_size=1,
         gradient_accumulation_steps=8,
         max_completion_length=512,
-        learning_rate=1e-5,
+        learning_rate=5e-6,
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
-        optim="adamw_8bit",
+        optim="adamw_torch",
         loss_type="dr_grpo",
-        reward_weights=[0.3, 1.5, 1.0, 0.5, 0.3],
+        reward_weights=[0.3, 1.5, 1.0, 0.4, 0.4, 0.4],
         max_steps=max_steps,
         save_steps=25,
         logging_steps=1,
@@ -1274,7 +1288,7 @@ def main():
 
     trainer = GRPOTrainer(
         model=MODEL,
-        reward_funcs=[r_format_graduated, r_resolution_quality, r_citation_grounding, r_calibration, r_parsimony],
+        reward_funcs=[r_format_graduated, r_resolution_quality, r_citation_grounding, r_calibration, r_parsimony, r_repetition_penalty],
         train_dataset=dataset,
         args=training_args,
     )
