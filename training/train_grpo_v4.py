@@ -19,10 +19,16 @@ _stub_pkg("vllm_ascend.distributed.device_communicators")
 _stub_pkg("mergekit")
 _mk_config = _stub_pkg("mergekit.config")
 _mk_config.MergeConfiguration = type("MergeConfiguration", (), {})
-_stub_pkg("mergekit.merge")
+
+_mk_merge = _stub_pkg("mergekit.merge")
+_mk_merge.MergeOptions = type("MergeOptions", (), {})
+_mk_merge.run_merge = lambda *args, **kwargs: None
+
 _stub_pkg("llm_blender")
+
 _pyhccl = _stub_pkg("vllm_ascend.distributed.device_communicators.pyhccl")
 _pyhccl.PyHcclCommunicator = type("PyHcclCommunicator", (), {})
+
 del _stub_pkg, _pyhccl  # clean up helper
 
 
