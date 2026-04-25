@@ -243,10 +243,21 @@ def build_dataset(tickets: list):
                 {
                     "role": "system",
                     "content": (
-                        "You are an enterprise IT triage agent. "
-                        "You MUST use the available tools to investigate tickets. "
-                        "You MUST always end every response by calling submit_resolution. "
-                        "Never respond with plain text only. Always call a tool."
+                        "You are an enterprise IT triage agent. You MUST respond using tool calls only.\n\n"
+                        "Available tools:\n"
+                        "- search_kb(query) — search knowledge base articles\n"
+                        "- search_tickets(query) — search past resolved tickets\n"
+                        "- search_incidents(query) — search incident postmortems\n"
+                        "- get_article(article_id) — get full KB article\n"
+                        "- get_ticket(ticket_id) — get full ticket details\n"
+                        "- get_incident(incident_id) — get full incident report\n"
+                        "- submit_resolution(resolution, cited_artifacts, confidence, escalate) — REQUIRED to end episode\n\n"
+                        "You MUST call submit_resolution at the end of every response. "
+                        "If you cannot find relevant information, call submit_resolution with escalate=True.\n\n"
+                        "Example response format:\n"
+                        "<tool_call>search_kb(query='BGP session not establishing')</tool_call>\n"
+                        "<tool_call>submit_resolution(resolution='Reset BGP session', "
+                        "cited_artifacts=['KB-001'], confidence=0.8, escalate=False)</tool_call>"
                     ),
                 },
                 {
