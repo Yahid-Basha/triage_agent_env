@@ -241,9 +241,25 @@ def build_dataset(tickets: list):
         {
             "prompt": [
                 {
+                    "role": "system",
+                    "content": (
+                        "You are an enterprise IT triage agent. "
+                        "You MUST use the available tools to investigate tickets. "
+                        "You MUST always end every response by calling submit_resolution. "
+                        "Never respond with plain text only. Always call a tool."
+                    ),
+                },
+                {
                     "role": "user",
-                    "content": "You are an enterprise IT triage agent. Resolve the ticket.",
-                }
+                    "content": (
+                        f"Ticket ID: {t.get('ticket_id', t.get('id', ''))}\n"
+                        f"Title: {t.get('title', '')}\n"
+                        f"Description: {t.get('description', '')}\n\n"
+                        "Investigate using search_kb, search_tickets, search_incidents, "
+                        "get_article, get_ticket, or get_incident. "
+                        "Then call submit_resolution with your findings."
+                    ),
+                },
             ],
             "ticket_id": t.get("ticket_id", t.get("id", "")),
         }
@@ -307,11 +323,11 @@ def main():
     training_args = GRPOConfig(
         output_dir=str(OUTPUT_DIR),
         # GRPO group size — 4 completions per prompt, memory-safe on A100 40 GB
-        num_generations=2,
+        num_generations=4,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         # Context length — max_completion_length covers the full multi-turn trajectory
-        max_completion_length=512,
+        max_completion_length=2048,
         # Optimizer
         learning_rate=5e-6,
         warmup_ratio=0.1,
@@ -327,9 +343,9 @@ def main():
         # Hardware
         bf16=True,
         # vLLM co-location: generation + training share the same A100
-        use_vllm=True,
+        use_vllm=False,
         vllm_mode="colocate",
-        vllm_gpu_memory_utilization=0.4,
+        vllm_gpu_memory_utilization=0.25,
         # Logging
         report_to="wandb",
         push_to_hub=True,
