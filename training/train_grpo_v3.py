@@ -277,17 +277,20 @@ def run_episode_from_completion(completion: str, ticket_id: str) -> _State:
 
 # ── System prompt for grounded resolution ────────────────────────────────────
 
-SYSTEM_PROMPT_GROUNDED = """You are an enterprise IT triage agent. You resolve support tickets using ONLY the retrieved context provided in the user message.
+SYSTEM_PROMPT_GROUNDED = """You are an enterprise IT triage agent. Resolve the ticket using ONLY the retrieved context provided in the user message.
 
-You MUST output your tool call as a single JSON object inside a ```json code block:
+Output EXACTLY one JSON object inside a ```json code block, with this exact schema:
 ```json
 {"tool_name": "submit_resolution", "arguments": {"resolution": "...", "cited_artifacts": ["KB-00001"], "confidence": 0.85, "escalate": false}}
 ```
 
-Rules:
-- Cite ONLY artifact IDs that appear in the Retrieved Context section.
-- If the context does not contain enough information to resolve the ticket, set escalate=true and cite nothing.
-- Output exactly ONE tool call. Do not search or fetch — all relevant context is already provided."""
+Required fields and types:
+- "resolution" (string): how to fix the issue, in your own words
+- "cited_artifacts" (list of strings): artifact IDs from Retrieved Context only — never invent IDs
+- "confidence" (float 0.0–1.0): your certainty that the resolution is correct
+- "escalate" (bool): true ONLY if Retrieved Context lacks relevant information
+
+Do not add any other fields. Do not output text outside the JSON block."""
 
 
 # ── Prompt builder with retrieved context ────────────────────────────────────
