@@ -738,6 +738,134 @@ def r_parsimony(completions, **kwargs):
     return out
 
 
+# ── Smoke-test reward table ───────────────────────────────────────────────────
+
+REWARD_WEIGHTS = [0.3, 1.5, 1.0, 0.5, 0.3]   # must match GRPOConfig reward_weights
+_REWARD_WEIGHT_SUM = sum(REWARD_WEIGHTS)
+
+_REWARD_FUNCS = [
+    ("format",   r_format_graduated),
+    ("quality",  r_resolution_quality),
+    ("citation", r_citation_grounding),
+    ("calib",    r_calibration),
+    ("parsim",   r_parsimony),
+]
+
+
+def _smoke_generate(model_or_path, tickets: list, n: int = 8) -> List[tuple]:
+    """Run fast greedy inference on the first *n* tickets.
+
+    Returns a list of (ticket_id, completion_text) pairs.
+    """
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    import torch
+
+    print(f"\n  Generating {n} smoke completions for reward table…")
+    tokenizer = AutoTokenizer.from_pretrained(model_or_path, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_or_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    model.eval()
+
+    corpus = get_corpus()
+    results = []
+    for t in tickets[:n]:
+        tid = t.get("ticket_id", t.get("id", ""))
+        messages = build_training_prompt(t, corpus)
+        input_ids = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+        ).to(model.device)
+        with torch.no_grad():
+            out = model.generate(
+                input_ids,
+                max_new_tokens=256,
+                do_sample=False,
+                temperature=1.0,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        new_tokens = out[0][input_ids.shape[-1]:]
+        text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+        results.append((tid, text))
+    return results
+
+
+def print_reward_table(completions_by_ticket: List[tuple]) -> None:
+    """Print a compact reward table for a batch of (ticket_id, completion) pairs.
+
+    Columns: #  ticket_id  format  quality  citation  calib  parsim  TOTAL
+    No prompt or completion text is shown — rewards only.
+    """
+    if not completions_by_ticket:
+        print("  (no completions to score)")
+        return
+
+    tids        = [t for t, _ in completions_by_ticket]
+    completions = [c for _, c in completions_by_ticket]
+
+    raw: Dict[str, list] = {}
+    for name, fn in _REWARD_FUNCS:
+        try:
+            if name in ("quality", "citation", "calib"):
+                raw[name] = fn(completions, ticket_id=tids)
+            else:
+                raw[name] = fn(completions)
+        except Exception as e:
+            raw[name] = [0.0] * len(completions)
+            print(f"  [warn] {name} reward failed: {e}")
+
+    n_cols = len(_REWARD_FUNCS)
+    names  = [n for n, _ in _REWARD_FUNCS]
+
+    # Weighted total per completion
+    totals = []
+    for i in range(len(completions)):
+        total = sum(
+            raw[names[j]][i] * REWARD_WEIGHTS[j]
+            for j in range(n_cols)
+        ) / _REWARD_WEIGHT_SUM
+        totals.append(total)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    COL_W = 9
+    TID_W = 14
+    hdr = f"  {'#':<3}  {'ticket_id':<{TID_W}}"
+    for n in names:
+        hdr += f"  {n:>{COL_W}}"
+    hdr += f"  {'TOTAL':>{COL_W}}"
+    sep = "  " + "-" * (len(hdr) - 2)
+
+    print()
+    print("  ┌─ Smoke-test reward summary " + "─" * max(0, len(sep) - 30) + "┐")
+    print(hdr)
+    print(sep)
+
+    col_sums = {n: 0.0 for n in names}
+    for i, (tid, total) in enumerate(zip(tids, totals)):
+        row = f"  {i+1:<3}  {tid:<{TID_W}}"
+        for n in names:
+            v = raw[n][i]
+            col_sums[n] += v
+            row += f"  {v:>{COL_W}.3f}"
+        row += f"  {total:>{COL_W}.3f}"
+        print(row)
+
+    # Mean row
+    print(sep)
+    mean_total = sum(totals) / len(totals)
+    mean_row = f"  {'avg':<3}  {'':< {TID_W}}"
+    for n in names:
+        mean_row += f"  {col_sums[n]/len(completions):>{COL_W}.3f}"
+    mean_row += f"  {mean_total:>{COL_W}.3f}"
+    print(mean_row)
+    print("  └" + "─" * (len(sep) - 3) + "┘")
+    print()
+
+
 # ── Plot helpers ──────────────────────────────────────────────────────────────
 
 def save_reward_curve(log_history: list, output_path: Path):
@@ -881,6 +1009,14 @@ def main():
         trainer.save_model()
         print(f"\n✓ Training complete. Model saved → {OUTPUT_DIR}")
         save_reward_curve(trainer.state.log_history, PLOTS_DIR / "reward_curve.png")
+
+        # ── Smoke-test reward table ────────────────────────────────────────────
+        if smoke:
+            try:
+                pairs = _smoke_generate(str(OUTPUT_DIR), train_tickets, n=8)
+                print_reward_table(pairs)
+            except Exception as e:
+                print(f"  [warn] reward table generation failed: {e}")
 
         # Auto-commit plots if in a git repo
         for cmd in [
