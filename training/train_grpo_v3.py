@@ -303,8 +303,8 @@ def build_training_prompt(ticket, corpus, distractor_k=3):
     # Realistic noise: distractors from actual search
     distractor_hits = corpus.search_kb(ticket["title"], max_results=distractor_k + 2)
     distractors = [
-        corpus.get_article(h["id"]) for h in distractor_hits
-        if h["id"] not in ticket.get("gold_cited_ids", [])
+        corpus.get_article(h["article_id"]) for h in distractor_hits
+        if h["article_id"] not in ticket.get("gold_cited_ids", [])
     ]
     distractors = [d for d in distractors if d is not None][:distractor_k]
 
@@ -314,7 +314,7 @@ def build_training_prompt(ticket, corpus, distractor_k=3):
     random.shuffle(context_items)
 
     context_block = "\n\n".join(
-        f"### {a['id']}\n{a.get('title', '')}\n{a.get('body', a.get('content', ''))[:1000]}"
+        f"### {a.get('article_id', a.get('id', ''))}\n{a.get('title', '')}\n{a.get('body', a.get('content', ''))[:1000]}"
         for a in context_items
     )
 
