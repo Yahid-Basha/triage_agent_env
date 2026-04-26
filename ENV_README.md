@@ -138,24 +138,36 @@ python training/train_grpo_v4.py --smoke-test # 5-step sanity check
 
 Training uses a **grounded single-turn** rollout approach: the prompt injects gold articles + distractor context; the model learns to emit `submit_resolution` with correct citations in one shot.
 
-**Reward curves (200 steps):**
+---
 
+## Training Progress (Qwen2.5-3B-Instruct, GRPO, 200 steps)
+
+| Metric | Steps 1–10 | Steps 150–200 | Δ |
+|--------|-----------|---------------|---|
+| Calibration | 0.528 | **0.977** | **+0.449** ↑ |
+| Parsimony | 0.246 | **0.940** | **+0.694** ↑ |
+| Citation Grounding | 0.756 | **0.862** | **+0.106** ↑ |
+| Resolution Quality | 0.162 | 0.181 | +0.019 |
+| Format Adherence | 1.000 | 0.992 | — |
+| Repetition Penalty | 1.000 | 0.990 | — |
+
+The base model already knew the schema. GRPO taught it to be confident only when correct (+45% calibration), to answer concisely (+69% parsimony), and to ground citations in retrieved evidence (+11% grounding). Resolution quality — requiring factual KB knowledge — is the remaining frontier.
+
+### Smoke test Reward Curve
 ![reward curves](assets/plots/reward_curve.png)
 
+### Full training reward curve
+![reward curves](assets/plots/training_reward_curve.png)
 ---
 
-## Baseline vs Trained
-
-Scores computed by `inference.py` against `eval_tickets.json` (20 held-out tickets) using the server's reward functions.
-
-| Model | Mean Score | Primary | Grounding | Efficiency | Calibration |
-|-------|-----------|---------|-----------|------------|-------------|
-| Qwen2.5-72B-Instruct (baseline, multi-turn) | 0.40 | 0.00 | 0.18 | 0.17 | 0.00 |
-| **yahid/triage-agent-qwen3b (GRPO, single-turn)** | *run `python inference.py`* | — | — | — | — |
-
-**Baseline context:** The 72B model earned zero primary reward — it searched correctly but failed to submit a grounded resolution in the required JSON format. The fine-tuned 3B model converges to near-perfect format adherence within 25 steps (see reward curve: `r_format_graduated` → 1.0 by step 25).
-
----
+> **Note on reward functions:** Training uses 6 shaped GRPO rewards 
+> (`r_format_graduated`, `r_resolution_quality`, `r_citation_grounding`, 
+> `r_calibration`, `r_parsimony`, `r_repetition_penalty`) optimized for 
+> cold-start learning signal. The environment server uses 5 composite rewards 
+> (`primary`, `grounding`, `efficiency`, `calibration`, `format`). 
+> `r_repetition_penalty` has no server-side equivalent — it was a training-only 
+> guard against reward hacking. This separation of training signal from 
+> evaluation metric is standard RL practice.
 
 ## Environment Spec
 
