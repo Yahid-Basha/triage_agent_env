@@ -277,7 +277,7 @@ def env_reset(session) -> dict:
 
 
 def env_step(session, action: dict) -> dict:
-    resp = session.post(f"{BASE_URL}/step", json=action, timeout=30)
+    resp = session.post(f"{BASE_URL}/step", json={"action": action}, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
