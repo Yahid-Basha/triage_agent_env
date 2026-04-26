@@ -85,7 +85,44 @@ Format and repetition were already pinned at the ceiling from the first step. Qw
 Calibration nearly doubled. Parsimony quadrupled. Citation grounding climbed from "okay" to "good." These are the rewards that track behavioral properties — properties of *how* the model speaks, not *what* it knows. The model learned to express less confidence when its answer was wrong (calibration), to stop padding responses (parsimony), and to draw citations from the actual provided context instead of inventing them (grounding).
 
 Then there's the one number that barely moved. `r_resolution_quality` went from 0.16 to 0.18. I want to be honest about that one because it's the most interesting result on the list.
+## Reading the reward curves
 
+![GRPO training reward curves — 200 steps, Qwen2.5-3B-Instruct](assets/plots/training_reward_curve.png)
+*Six reward signals over 200 GRPO steps. Each line is the mean reward 
+across the 8 completions sampled per step.*
+
+One thing that surprises people seeing RL training curves for the first time: 
+the loss isn't what you watch. In GRPO, the loss oscillates around zero throughout 
+training — that's expected behavior for the `dr_grpo` objective. What you watch 
+instead are the reward curves, and you want them to go *up* and stabilize.
+
+The six curves here fall into four groups that each tell a different story.
+
+**Format and repetition (flat at 1.0 from step 1)** — the base model already knew 
+the JSON schema and didn't loop citations. GRPO had nothing to teach here. Flat 
+lines at the ceiling are a good sign, not stagnation.
+
+**Calibration and parsimony (S-curve convergence, steps 1–30)** — these are the 
+headline results. Calibration climbs from 0.53 to 0.97 in roughly thirty steps. 
+Parsimony goes from 0.25 to 0.94 over the same window. Both show a classic 
+S-curve: slow start, fast middle, then plateau. These are behavioral properties 
+the base model had the latent capacity for but hadn't been incentivized to use. 
+The gradient found them quickly.
+
+**Citation grounding (noisy upward trend)** — the most visually dramatic curve. 
+It swings between 0.0 and 1.0 throughout all 200 steps, and the variance doesn't 
+obviously shrink. This is not a training failure — it's a harder reward to 
+optimize. Citation grounding depends on each specific ticket's context: sometimes 
+the model identifies the right article, sometimes it picks a distractor. The noise 
+is honest. The mean trends upward (0.756 → 0.862), which is what matters.
+
+**Resolution quality (the line that doesn't move)** — the orange line stays near 
+0.18 for the entire run. This is the most important curve to understand correctly. 
+It's not flat because training failed. It's flat because GRPO cannot add knowledge 
+the base model doesn't have. Writing the correct BGP reset procedure requires 
+knowing the correct BGP reset procedure — that's a pretraining question, not a 
+fine-tuning question. The ceiling here tells you where RL ends and domain 
+pretraining begins.
 ## The ceiling that RL can't push through
 
 `r_resolution_quality` is ROUGE-L overlap between the model's resolution text and the gold answer. It measures something like "did you actually write the right fix?"

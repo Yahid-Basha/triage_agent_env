@@ -166,7 +166,11 @@ The base model already knew the schema. GRPO taught it to be confident only when
 
 ### Full training reward curve
 ![reward curves](assets/plots/training_reward_curve.png)
+
+### Full training Loss Curve
+![loss curve](assets/plots/loss_curve.png)
 ---
+
 
 > **Note on reward functions:** Training uses 6 shaped GRPO rewards 
 > (`r_format_graduated`, `r_resolution_quality`, `r_citation_grounding`, 
