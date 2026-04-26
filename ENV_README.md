@@ -11,11 +11,20 @@ tags:
   - openenv
 ---
 
+
+
 # Enterprise IT Ticket Triage — OpenEnv RL Environment
+
 
 An OpenEnv reinforcement learning environment where an LLM agent resolves enterprise IT support tickets by calling knowledge-base and incident-management tools, then submitting a grounded resolution with citations.
 
 The accompanying training script fine-tunes **Qwen2.5-3B-Instruct → [yahid/triage-agent-qwen3b](https://huggingface.co/yahid/triage-agent-qwen3b)** using GRPO on this environment.
+
+## Links
+- 🤗 **HF Space:** https://huggingface.co/spaces/yahid/triage_agent_env
+- 📓 **Colab Notebook:** [PASTE_LINK]
+- 🧠 **Trained Model:** https://huggingface.co/yahid/triage-agent-qwen3b
+- 📝 **Blog:** [Blog.MD](./Blog.MD)
 
 ---
 
