@@ -20,11 +20,15 @@ An OpenEnv reinforcement learning environment where an LLM agent resolves enterp
 
 The accompanying training script fine-tunes **Qwen2.5-3B-Instruct → [yahid/triage-agent-qwen3b](https://huggingface.co/yahid/triage-agent-qwen3b)** using GRPO on this environment.
 
+
 ## Links
-- 🤗 **HF Space:** https://huggingface.co/spaces/yahid/triage_agent_env
-- 📓 **Colab Notebook:** [PASTE_LINK]
-- 🧠 **Trained Model:** https://huggingface.co/yahid/triage-agent-qwen3b
-- 📝 **Blog:** [Blog.MD](./Blog.MD)
+
+| | |
+|---|---|
+| 🖥️ **Live Demo** | [yahid/triage_agent_env on HF Spaces](https://huggingface.co/spaces/yahid/triage_agent_env) |
+| 🧠 **Trained Model** | [yahid/triage-agent-qwen3b](https://huggingface.co/yahid/triage-agent-qwen3b) |
+| 📓 **Training Notebook (Colab)** | [Open in Colab](https://colab.research.google.com/drive/1vqkxsp7euJ45cbv4AxfXr5dr-FTOSA3l?usp=sharing) | [Available in this repo](./training/train_grpo_colab_openenvHackathon_finale.ipynb)
+| 📝 **Full Blog Post** | [When my RL agent started writing about Star Wars...](https://huggingface.co/spaces/yahid/triage_agent_env/blob/main/Blog.md) |
 
 ---
 

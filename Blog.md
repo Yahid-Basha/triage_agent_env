@@ -2,7 +2,7 @@
 
 *A Sunday-morning postmortem on teaching a 3B model to do enterprise IT triage with GRPO.*
 
-It's 8 AM on a Sunday. The Meta × PyTorch OpenEnv Hackathon submission is due at 5 PM. My training logs show a loss curve that's been flat at 0.0 for the last thirty minutes.
+It's 1 AM on a Sunday. The Meta × PyTorch OpenEnv Hackathon submission is due at 5 PM. My training logs show a loss curve that's been flat at 0.0 for the last thirty minutes.
 
 A flat loss in supervised learning means convergence. A flat loss in reinforcement learning usually means something else: your model has found a way to game your reward function, and it is now sitting in a local optimum, smug about it.
 
@@ -10,7 +10,7 @@ Mine had decided that the easiest way to maximize reward was to write about cine
 
 ## What I was actually trying to build
 
-I work on a production RAG system at Verizon — the kind of system that's supposed to surface the right runbook when a NOC engineer types "BGP session won't come up after the Tuesday maintenance window." If you've ever built one of these, you know the failure modes are not in retrieval. Retrieval is mostly a solved problem. The failures are behavioral, at the LLM layer:
+I work on a production RAG system at Verizon — the kind of system that's supposed to surface the right runbook when a NOC engineer types "BGP session won't come up after the Tuesday maintenance window." This is Theme #3.1 — World Modeling for Professional Tasks — applied to a domain where the model must maintain accurate beliefs about a partially observable KB, not exploit shortcuts to fake a resolution. If you've ever built one of these, you know the failure modes are not in retrieval. Retrieval is mostly a solved problem. The failures are behavioral, at the LLM layer:
 
 The model retrieves the right document and still hallucinates the answer. It cites a KB article that doesn't exist. It sounds confident when it should escalate. It pads the response with filler because shorter answers feel less authoritative. None of these are bugs you can fix with better embeddings.
 
@@ -141,7 +141,7 @@ The pitch isn't that I trained a model that hits some benchmark. It's that the m
 
 You don't need to swap your 7B for a 70B to fix these. You need to teach the model you already have to behave correctly over retrieved context.
 
-For a NOC at 3 AM, the difference between an agent that escalates honestly and one that confidently misroutes a P1 incident is exactly the kind of thing calibration fixes.
+Calibration improved by 85% relative — from 0.528 to 0.977. In production terms, that's the difference between an agent that confidently misroutes a P1 incident at 3 AM and one that escalates honestly when it doesn't know the answer. That's not a benchmark number. That's a safety property.
 
 ## What I'd do differently
 
