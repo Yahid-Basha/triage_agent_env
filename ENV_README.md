@@ -1,97 +1,166 @@
-# RAG Pipeline Quality Evaluator
+---
+title: Triage Agent Env
+emoji: 🎫
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 8000
+base_path: /web
+tags:
+  - openenv
+---
 
-An OpenEnv RL environment where an AI agent evaluates the quality of Retrieval-Augmented Generation (RAG) pipelines. The agent receives retrieval results and must judge relevance, detect hallucinations, and score citation accuracy — tasks critical in production AI systems that are difficult to automate reliably.
+# Enterprise IT Ticket Triage — OpenEnv RL Environment
 
-## Motivation
+An OpenEnv reinforcement learning environment where an LLM agent resolves enterprise IT support tickets by calling knowledge-base and incident-management tools, then submitting a grounded resolution with citations.
 
-Enterprise AI systems rely on RAG pipelines to ground LLM responses in retrieved documents. Evaluating pipeline quality — whether retrieved chunks are relevant, whether answers are faithful to sources, whether citations are accurate — is a high-value, real-world task. This environment trains and evaluates agents on exactly these judgment tasks using realistic enterprise IT support scenarios.
+The accompanying training script fine-tunes **Qwen2.5-3B-Instruct → [yahid/triage-agent-qwen3b](https://huggingface.co/yahid/triage-agent-qwen3b)** using GRPO on this environment.
 
-## Task Types
+---
 
-| Task | Difficulty | Description |
-|---|---|---|
-| `relevance` | easy → hard | Given a query and retrieved chunks, identify which chunk IDs are relevant |
-| `hallucination` | medium → hard | Given context and a generated answer, identify fabricated claims not supported by the source |
-| `full_judgment` | easy → hard | Score relevance, faithfulness, and citation accuracy (0.0–1.0 each) for a full RAG response |
+## Task
 
-## Action Space (`RAGAction`)
+The agent receives an IT support ticket (title + description) and must:
+
+1. Search the KB, past tickets, and incidents to find relevant articles
+2. Retrieve full article content for promising hits  
+3. Submit a resolution with cited artifact IDs, a confidence score, and an escalation flag
+
+Episodes terminate on `submit_resolution` or after **20 turns** (timeout penalty: −0.3).
+
+---
+
+## Action Space (`TriageAction`)
 
 ```python
-class RAGAction(BaseModel):
-    relevant_chunk_ids: Optional[List[int]]    # chunk IDs the agent deems relevant
-    hallucinated_claims: Optional[List[str]]   # claims not supported by the context
-    relevance_score: Optional[float]           # 0.0–1.0 for full_judgment
-    faithfulness_score: Optional[float]        # 0.0–1.0 for full_judgment
-    citation_accuracy_score: Optional[float]   # 0.0–1.0 for full_judgment
-    reasoning: Optional[str]                   # optional explanation
+class TriageAction(BaseModel):
+    tool_name: str              # one of the 7 tools below
+    query: Optional[str]        # for search tools
+    article_id: Optional[str]   # for get_article
+    ticket_id: Optional[str]    # for get_ticket
+    incident_id: Optional[str]  # for get_incident
+    max_results: Optional[int]  # search limit (default 5)
+    status: Optional[str]       # ticket filter (open/closed/…)
+    resolution: Optional[str]   # for submit_resolution
+    cited_artifacts: Optional[List[str]]  # KB/TKT/INC IDs cited
+    confidence: Optional[float] # 0.0 – 1.0
+    escalate: Optional[bool]    # True = cannot resolve, escalate
 ```
 
-## Observation Space (`RAGObservation`)
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_kb` | TF-IDF semantic search over 50 KB articles |
+| `get_article` | Fetch full KB article by ID |
+| `search_tickets` | Search past resolved tickets |
+| `get_ticket` | Fetch full past ticket |
+| `search_incidents` | Search incident records |
+| `get_incident` | Fetch full incident |
+| `submit_resolution` | End episode — submit resolution + citations |
+
+---
+
+## Observation Space (`TriageObservation`)
 
 ```python
-class RAGObservation(BaseModel):
-    query: str                          # the user query
-    retrieved_chunks: List[str]         # candidate chunks from retriever
-    chunk_ids: List[int]                # IDs corresponding to each chunk
-    generated_answer: Optional[str]     # LLM answer (hallucination/full_judgment only)
-    cited_sources: Optional[List[int]]  # chunk IDs the answer claims to cite
-    task_type: TaskType                 # RELEVANCE | HALLUCINATION | FULL_JUDGMENT
-    instructions: str                   # task-specific instructions for the agent
+class TriageObservation(BaseModel):
+    ticket_id: str
+    ticket_title: str
+    ticket_description: str
+    tool_name: str           # last tool called
+    tool_result: dict        # result from that tool
+    turn: int
+    max_turns: int           # 20
+    remaining_budget: int
+    done: bool
+    reward: Optional[float]  # non-None only on terminal step
+    info: dict               # reward_breakdown on terminal step
 ```
+
+---
 
 ## Reward Function
 
-### Relevance
-F1 score between predicted and ground-truth relevant chunk IDs.
+Terminal reward (on `submit_resolution`):
 
-### Hallucination
-Recall of ground-truth hallucinations detected, with over-flagging penalty (−0.1 per extra claim beyond ground truth count).
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| `primary` | 1.0 | Binary: resolution F1 > 0.7 AND citation F1 > 0.5 |
+| `grounding` | 0.3 | Partial citation F1 credit |
+| `efficiency` | 0.2 | Bonus for not over-searching relative to difficulty |
+| `calibration` | 0.15 | Brier-style bonus for calibrated confidence |
+| `format` | 0.05 | Non-empty, well-formed submission |
 
-### Full Judgment
-Weighted average: **relevance 30% + faithfulness 40% + citation accuracy 30%**. Each dimension scored as `max(0, 1 − |predicted − ground_truth|)`.
+Unanswerable tickets: `escalate=True` earns full primary reward.
+
+---
 
 ## Dataset
 
-16 samples across enterprise IT support / RAG systems domain. Hard samples are weighted 2× in random selection so evaluations skew toward challenging cases.
+- **50 training tickets** (`data/train_tickets.json`): easy / medium / hard across networking, security, cloud, and infra domains
+- **20 eval tickets** (`data/eval_tickets.json`): held-out, balanced by difficulty
 
-- **6 relevance** (2 easy, 1 medium, 3 hard): password reset, SLA policy, DB access, vendor onboarding, Okta SCIM config with topically-related distractors, REST API v2.3 breaking changes with domain distractors
-- **5 hallucination** (2 medium, 3 hard): payment outage, data retention, API autoscaling, embedding cache optimisation (subtle 1% off), DB maintenance window (1-hour shift)
-- **5 full_judgment** (1 easy, 2 medium, 2 hard): breach incident, low-confidence retrieval, ticket deduplication, adversarial reranking (correct answer / wrong citations), HNSW embedding index
+Each ticket has `gold_resolution` and `gold_cited_ids` for automatic scoring — no LLM judge needed.
+
+---
 
 ## Quick Start
 
-```python
-from openenv import RAGEnv, RAGAction
-
-env = RAGEnv.from_env("yahid/rag_judge_env")
-obs = await env.reset(task_type="relevance")
-result = await env.step(RAGAction(relevant_chunk_ids=[0, 2]))
-print(result.reward)  # 0.0 – 1.0
-```
-
-## Local Setup
-
 ```bash
-git clone https://huggingface.co/spaces/yahid/rag_judge_env
-cd rag_judge_env
+git clone https://huggingface.co/spaces/yahid/triage_agent_env
+cd triage_agent_env
 uv sync
 export HF_TOKEN=your_token
 python inference.py
 ```
 
-## Baseline Scores
+Or against the live Space:
 
-Model: `Qwen/Qwen2.5-72B-Instruct` via HuggingFace Router
+```python
+from openenv import OpenEnvClient
+client = OpenEnvClient("https://yahid-triage-agent-env.hf.space")
+obs = await client.reset()
+obs = await client.step({"tool_name": "search_kb", "query": "VPN tunnel down"})
+```
 
-| Task | Score |
-|---|---|
-| relevance | 0.80 |
-| hallucination | 0.67 |
-| full_judgment | 1.00 |
+---
+
+## Training
+
+The environment was used to fine-tune Qwen2.5-3B-Instruct with GRPO:
+
+```bash
+python training/train_grpo_v4.py              # full 200-step run (A100)
+python training/train_grpo_v4.py --smoke-test # 5-step sanity check
+```
+
+Training uses a **grounded single-turn** rollout approach: the prompt injects gold articles + distractor context; the model learns to emit `submit_resolution` with correct citations in one shot.
+
+**Reward curves (200 steps):**
+
+![reward curves](assets/plots/reward_curve.png)
+
+---
+
+## Baseline vs Trained
+
+Scores computed by `inference.py` against `eval_tickets.json` (20 held-out tickets) using the server's reward functions.
+
+| Model | Mean Score | Primary | Grounding | Efficiency | Calibration |
+|-------|-----------|---------|-----------|------------|-------------|
+| Qwen2.5-72B-Instruct (baseline, multi-turn) | 0.40 | 0.00 | 0.18 | 0.17 | 0.00 |
+| **yahid/triage-agent-qwen3b (GRPO, single-turn)** | *run `python inference.py`* | — | — | — | — |
+
+**Baseline context:** The 72B model earned zero primary reward — it searched correctly but failed to submit a grounded resolution in the required JSON format. The fine-tuned 3B model converges to near-perfect format adherence within 25 steps (see reward curve: `r_format_graduated` → 1.0 by step 25).
+
+---
 
 ## Environment Spec
 
-- `openenv validate`: ✅ passes
-- Max steps per episode: 8 (single-turn, done=True after step 1)
-- All rewards: [0.0, 1.0]
-- Runtime: < 1 minute per task on vcpu=2 / 8GB RAM
+- `openenv validate`: ✅
+- Max steps: 20
+- Rewards: [−0.3, ~1.65]
+- Runtime: < 30 s per episode on CPU; < 5 s on GPU
+- Concurrent sessions: ✅ (`SUPPORTS_CONCURRENT_SESSIONS = True`)
